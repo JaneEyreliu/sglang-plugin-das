@@ -670,3 +670,8 @@ def post_load_weights(
             )
             self_attn.w_vc = bind_or_assign(self_attn.w_vc, w_vc.contiguous())
             self_attn.use_deep_gemm_bmm = True
+
+        if _is_hcu and hasattr(self_attn, "prepare_attention_output_gate"):
+            from hcu_sglang.models.hyv4_fp8_v import prepare
+
+            prepare(self_attn, is_hcu=_is_hcu, use_aiter_gfx95=_use_aiter_gfx95)

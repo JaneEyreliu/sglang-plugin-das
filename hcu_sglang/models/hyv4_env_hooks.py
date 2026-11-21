@@ -64,6 +64,11 @@ def around_ihc_head(original, layer, hidden_states, norm=None):
 
 def around_attention_init(original, layer, config, *args, **kwargs):
     result = original(layer, config, *args, **kwargs)
+    if is_hcu():
+        from sglang.srt.runtime_context import get_parallel
+        from hcu_sglang.models.hyv4_dcp import configure_sink
+
+        configure_sink(layer, config, get_parallel())
     if not (is_hcu() and envs.SGLANG_HY4_LINEAR_GATE_CP_SHARD.get()):
         return result
     from sglang.srt.runtime_context import get_parallel

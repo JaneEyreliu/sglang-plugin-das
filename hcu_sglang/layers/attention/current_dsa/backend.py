@@ -3536,7 +3536,11 @@ class DeepseekSparseAttnBackend(
         attn_sink: Optional[torch.Tensor] = None,
         return_lse: bool = False,
     ) -> torch.Tensor | tuple[torch.Tensor, torch.Tensor]:
-        if return_lse and attn_sink is not None:
+        hyv4_dcp_sink = (
+            return_lse and _is_hcu and attn_sink is not None
+            and getattr(layer, "hyv4_sink_getter", None) is not None
+        )
+        if return_lse and attn_sink is not None and not hyv4_dcp_sink:
             raise NotImplementedError("DSA DCP does not support attention sinks")
         flash_mla_with_kvcache = get_flashmla_op(
             "flash_mla_with_kvcache", is_hcu=_is_hcu
@@ -3605,7 +3609,7 @@ class DeepseekSparseAttnBackend(
                 (0, target_q_heads, 1), dtype=torch.float32, device=q_input.device
             )
         else:
-            attn_sink_kv = attn_sink
+            attn_sink_kv = None if hyv4_dcp_sink else attn_sink
             if attn_sink_kv is not None and target_q_heads != num_q_heads:
                 # Match the padded q-head count; the padded heads' output is
                 # trimmed after the kernel, so the pad sink value is inert.
@@ -3658,6 +3662,13 @@ class DeepseekSparseAttnBackend(
                 self.get_device_int32_arange(page_table_1.shape[0] + 1),
                 max_seq_len=1,
             )
+            if hyv4_dcp_sink:
+                from hcu_sglang.layers.attention.current_dsa.hyv4_sink import apply_hyv4_sink
+
+                o, lse = apply_hyv4_sink(
+                    o, lse, attn_sink, local_kv_counts,
+                    dcp_size=self.dcp_size, lse_base2=True,
+                )
             return o, lse
 
         return o

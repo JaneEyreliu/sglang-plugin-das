@@ -823,7 +823,15 @@ def forward_absorb_core(
 
     if self.current_attention_backend in N1.FORWARD_ABSORB_CORE_ATTENTION_BACKENDS:
         extra_args = {}
-        if getattr(self, "learnable_sink_param", None) is not None:
+        sink_layer = (
+            self.attn_mqa_for_dcp_decode
+            if self.is_dcp_mla_decode_phase(forward_batch)
+            else self.attn_mqa
+        )
+        sink_getter = getattr(sink_layer, "hyv4_sink_getter", None)
+        if sink_getter is not None:
+            extra_args["attn_sink"] = sink_getter()
+        elif getattr(self, "learnable_sink_param", None) is not None:
             extra_args["attn_sink"] = self.learnable_sink_param
         if self._fuse_rope_for_trtllm_mla(forward_batch):
             extra_args.update(
@@ -957,6 +965,10 @@ def forward_absorb_core(
             ],
             dim=1,
         ).flatten(1, 2)
+    elif getattr(self, "use_hipblaslt_fp8_v_up_proj", False):
+        from hcu_sglang.models.hyv4_fp8_v import project
+
+        attn_bmm_output = project(self, attn_output)
     elif self.use_deep_gemm_bmm:
         (
             attn_output_val,

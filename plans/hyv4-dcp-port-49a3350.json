@@ -898,9 +898,13 @@
         "test/registered/unit/test_linear_bf16_fp32_dispatch.py",
         "test/registered/unit/test_server_args_cli_metadata.py"
       ],
-      "status": "pending_review",
-      "targets": [],
-      "verification": "pending"
+      "status": "implemented_partial",
+      "targets": [
+        "hcu_sglang/models/hyv4_dcp.py",
+        "hcu_sglang/layers/attention/current_dsa/hyv4_sink.py",
+        "hcu_sglang/layers/attention/current_dsa/backend.py"
+      ],
+      "verification": "DCP2/4/8 FP32/BF16 sink merge CPU tests passed; allocator/scheduler/launch integration pending"
     },
     {
       "sha": "28c51580dbc64f890b24b4158c21ec13d9232027",
@@ -1448,9 +1452,15 @@
         "python/sglang/srt/models/deepseek_common/deepseek_weight_loader.py",
         "test/registered/jit/test_hipblaslt_fp8_bmm.py"
       ],
-      "status": "pending_review",
-      "targets": [],
-      "verification": "pending"
+      "status": "implemented",
+      "targets": [
+        "hcu_sglang/models/hyv4_fp8_v.py",
+        "hcu_sglang/layers/attention/current_dsa/csrc/hipblaslt_fp8_bmm.cu",
+        "hcu_sglang/models/deepseek/deepseek_common/methods/weight_loader.py",
+        "hcu_sglang/models/deepseek/deepseek_v2/methods/attention.py",
+        "pyproject.toml"
+      ],
+      "verification": "4 offline behavior tests passed; 4 HCU tests pending"
     },
     {
       "sha": "49a3350084af4cfd6f3bc8f6c9c48513e6ea8add",
@@ -1464,6 +1474,47 @@
         "hcu_sglang/mem_cache/hyv4_staged_backup.py"
       ],
       "verification": "offline_targeted_only; HCU pending"
+    }
+  ],
+  "remaining": [
+    {
+      "feature": "HYV4 DCP2/4/8",
+      "status": "pending",
+      "chain": [
+        "scoped argument resolution",
+        "KV target/draft geometry and INT8 index capacity",
+        "retraction snapshot and queue draining",
+        "a2a launch validator",
+        "end-to-end precision"
+      ]
+    },
+    {
+      "feature": "PP+MTP prefill",
+      "status": "pending",
+      "chain": [
+        "last-stage draft ownership",
+        "draft model PP-local construction",
+        "TP-only draft memory collectives",
+        "scheduler pipeline payload/hidden states",
+        "PD wire and handoff"
+      ]
+    },
+    {
+      "feature": "optional optimizations",
+      "status": "partial",
+      "implemented": [
+        "FP8 V projection; staged LayerSplit backup"
+      ],
+      "pending": [
+        "DCP fused post-attention and fused V projection",
+        "gate/QKV and gate/A2A overlap",
+        "short-context K-only path",
+        "forward-scoped fused KV write locations",
+        "SBO and graph fork barrier",
+        "vectorized Mooncake descriptors",
+        "compact top-k epoch cache",
+        "prefix accessor runtime dimensions"
+      ]
     }
   ]
 }

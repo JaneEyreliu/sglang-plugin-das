@@ -5166,3 +5166,37 @@ namespace 调整在 donor 初始化返回后执行，来源字节校验 3 项通
 修复后完整 discovery 为 400 tests：29 failures、17 errors、52 skipped，
 失败/错误标识集合与基线相同，无新增失败；L0 通过。全仓历史失败仍待处理。S3 SSH 连接超时，本轮未作 HCU、整模型或性能验证。
 后续阶段继续迁入 DCP2/4/8、PP+MTP 与可选优化；本阶段不声明该范围已支持。
+
+
+## 2026-11-21 HY4 分支迁移：DCP sink 与可选 FP8 V projection
+
+在第一阶段 `71541b9` 后继续实现；完整 DCP、PP+MTP 和其余可选优化仍在迁移，
+逐提交处置和缺口保留在 `plans/hyv4-dcp-port-49a3350.json`，不声明全范围等价。
+
+源 `44678d70` 的 sink/LSE 修正迁到 plugin：DCP 模型加载完整 FP32 sink，
+普通 attention 使用本地头切片，DCP attention 使用该组全部头。HCU FlashMLA
+分区调用不传原生 sink；返回后按 exp(sink)/D 分摊，更新输出及 base-2 LSE，
+随后沿现有跨 rank merge。空 KV 的 NaN/+inf 被屏蔽。非 DCP 保留官方 sink 参数。
+4 项 CPU 数值及调用路径测试通过：DCP2/4/8、FP32/BF16、空行、空分区、
+完整参数加载、头切片和单次修正；尚未放开官方 HYV4 DCP 配置限制。
+
+源 `25c963bf` 的 FP8 V projection 通过 `SGLANG_HY4_FP8_V_UP_PROJ` 接入，
+默认 false。权重加载时编译 plugin 内置 hipBLASLt 扩展，保留 BF16 权重，
+生成缩放后的 [H,V,K] FP8 副本；运行时量化 token-major 激活并输出 BF16，
+保留后续 LoRA 修正及 gate。启用但 HCU/BF16/AITER/DeepGEMM 条件不符时拒绝。
+原生代码随 wheel 打包；native extension 和各 shape 的计划必须在 graph capture 前热身。
+4 项离线行为测试通过，4 项 HCU 数值/Graph 测试因无 HCU 跳过，未编译 native 扩展。
+
+S3 再次 SSH 连接超时。CPU 组件测试不能替代 DCP/PP 的整模型与跨 rank 验证。
+当前源码 allocator、draft pool 与新官方 KVWriteLoc 的关系仍需逐调用核对，
+因此没有直接复制旧 pool factory 或放开启动限制。图文导览未作浏览器视觉复验。
+
+本阶段全量 discovery：412 tests，29 failures、17 errors、56 skipped；
+失败/错误标识集合与前置基线完全相同，无新增失败。L0 通过。
+构建 wheel 成功，核验打包的 hipBLASLt `.cu` 与工作树逐字节相同；
+wheel 构建不代表 native 编译或 HCU 执行通过。
+
+补充 PP 审阅：当前官方已有 `draft_pp_context()`、`get_pp_stage_load_group()`、
+`EagleDraftWorker` 的 scoped draft 构建，以及 scheduler PP relay 的 draft
+hidden/top-k 数据路径；不机械复制旧分支对应的全局 `_PP` 替换。
+PD prefill 的末级 draft 选择、内存 collective 和各阶段缓存所有权仍待逐调用确认。
