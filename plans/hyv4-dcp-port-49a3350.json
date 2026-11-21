@@ -15,7 +15,7 @@
     "optional optimizations"
   ],
   "notes": [
-    "Full ancestry includes merge-side commits; review final behavior, not commit counts.",
+    "Review start..end plus the start commit itself. Do not use start^..end: start is a merge and that includes its pre-existing side parent.",
     "Source backup .orig files are not runtime deliverables.",
     "Pending entries do not imply equivalence or support."
   ],
@@ -153,17 +153,6 @@
         "test/registered/dcp/test_dsa_dcp_launch_contract.py",
         "test/registered/dcp/test_dsa_forward_phase_dcp.py",
         "test/registered/dcp/test_hcu_dcp_cuda_graph_kv_write.py"
-      ],
-      "status": "pending_review",
-      "targets": [],
-      "verification": "pending"
-    },
-    {
-      "sha": "10692b7841c5a9c54b84d87010b27b847a8c701c",
-      "title": "[HY4][HCU] Enable fp8_e4m3 KV cache with learnable attention sink",
-      "source_paths": [
-        "python/sglang/srt/arg_groups/overrides.py",
-        "python/sglang/srt/layers/attention/dsa_backend.py"
       ],
       "status": "pending_review",
       "targets": [],
@@ -1516,5 +1505,11 @@
         "prefix accessor runtime dimensions"
       ]
     }
-  ]
+  ],
+  "commit_selection": {
+    "command": "git rev-list 9ef6c8cc8413075a54ef56b8a77dc8ea4a193402..49a3350084af4cfd6f3bc8f6c9c48513e6ea8add; include 9ef6c8cc8413075a54ef56b8a77dc8ea4a193402",
+    "count_including_endpoints": 54,
+    "first_parent_count_including_endpoints": 42,
+    "scope": "Only this bounded commit range; merge-introduced side commits are provenance, not an expansion to the whole source branch."
+  }
 }
