@@ -143,9 +143,26 @@ def _make_hook(module_name, class_name, donor, method, helpers):
             return original(*args, **kwargs)
         if bound is None:
             bound = _bind(vars(donor)[method], namespace)
-        return bound(*args, **kwargs)
+        result = bound(*args, **kwargs)
+        if donor is cpu_cache_methods.MooncakeStore and method == "__init__":
+            _set_mooncake_cp_namespace(args[0])
+        return result
 
     return around
+
+
+def _set_mooncake_cp_namespace(store):
+    from sglang.srt.runtime_context import get_parallel
+
+    store.cp_layer_split = (
+        store.attn_cp_size > 1
+        and getattr(get_parallel(), "enable_dsa_cache_layer_split", False)
+    )
+    if store.cp_layer_split:
+        cp_part = f"cp{store.attn_cp_rank}"
+        store.mla_suffix = (
+            f"{store.mla_suffix}_{cp_part}" if store.enable_pp else cp_part
+        )
 
 
 def _storage_attachment_init(original, self, *args, **kwargs):

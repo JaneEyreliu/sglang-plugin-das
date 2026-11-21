@@ -969,6 +969,10 @@ class LayerSplitDSATokenToKVPool(DSATokenToKVPool):
                 self._active_main_kv_compact_page_ids = torch.empty(
                     0, dtype=torch.long, device=self.device
                 )
+                # ``loc`` is shared by all layers in a batch. Cache its
+                # physical-to-compact translation and invalidate it whenever
+                # a new page plan is installed.
+                self._compact_loc_cache: Optional[tuple] = None
                 self.remote_kv_layer_id: Optional[int] = None
                 self.device_module = torch.get_device_module(self.device)
                 self.kv_broadcast_stream = self.device_module.Stream()
@@ -1006,6 +1010,7 @@ class LayerSplitDSATokenToKVPool(DSATokenToKVPool):
         self._active_main_kv_page_plan = None
         self._active_main_kv_batch_marker = None
         self._compact_index_k_enabled = False
+        self._compact_loc_cache = None
         self._clear_index_k_buffers()
 
     # ---- MLA latent KV: owned-only writes, owner-broadcast reads ----------
@@ -1168,6 +1173,7 @@ class LayerSplitDSATokenToKVPool(DSATokenToKVPool):
         )
         self.index_key_cache.remote_layer_id = None
         self.remote_kv_layer_id = None
+        self._compact_loc_cache = None
         self.physical_to_compact_main_kv_page.fill_(-1)
         # Keep this device-side to avoid a synchronous scalar H2D.
         self.physical_to_compact_main_kv_page[0:1].zero_()
@@ -1271,6 +1277,15 @@ class LayerSplitDSATokenToKVPool(DSATokenToKVPool):
         if self._active_main_kv_page_plan is None:
             return loc
 
+        # ``loc`` is identical for every layer of a batch; the mapping only
+        # changes in configure_main_kv_page_plan, which drops this cache. Do
+        # not retain graph-captured tensors, where the input storage can be
+        # mutated by the next capture.
+        use_cache = not torch.cuda.is_current_stream_capturing()
+        cache = self._compact_loc_cache
+        if use_cache and cache is not None and cache[0] is loc:
+            return cache[1]
+
         valid = loc >= 0
         safe_loc = loc.clamp_min(0)
         physical_page = torch.div(safe_loc, self.page_size, rounding_mode="floor").to(
@@ -1281,11 +1296,14 @@ class LayerSplitDSATokenToKVPool(DSATokenToKVPool):
             0, physical_page.reshape(-1)
         ).reshape(physical_page.shape)
         compact_loc = compact_page.to(loc.dtype) * self.page_size + page_offset
-        return torch.where(
+        compact_loc = torch.where(
             valid & (compact_page >= 0),
             compact_loc,
             torch.full_like(compact_loc, -1),
         )
+        if use_cache:
+            self._compact_loc_cache = (loc, compact_loc)
+        return compact_loc
 
     def _broadcast_compact_main_kv_pages(
         self,
@@ -1574,6 +1592,23 @@ class LayerSplitDSATokenToKVPool(DSATokenToKVPool):
 
     def invalidate_index_buffer_for_layer(self, layer_id: int) -> None:
         self.index_key_cache.invalidate(layer_id)
+
+    def reset_layer_broadcast_cache(self) -> None:
+        """Drop every cached remote copy so the next read rebroadcasts.
+
+        Whether a fallback broadcast is issued depends on rank-local
+        ``remote_layer_id`` state. Callers that cannot guarantee that state is
+        identical on every CP rank (e.g. HiCache load-back restores the MTP
+        draft pool only on its owner rank) must call this on all ranks so the
+        dedicated communicator sees the same collective sequence everywhere.
+        """
+
+        self._drain_pending_layer_broadcasts(
+            discard_index=True,
+            discard_main=True,
+        )
+        self.index_key_cache.remote_layer_id = None
+        self.remote_kv_layer_id = None
 
     def _get_broadcastable_index_buffer(self, layer_id: int) -> torch.Tensor:
         return self.index_key_cache.get_broadcastable_buffer(layer_id)

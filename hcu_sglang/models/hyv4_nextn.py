@@ -92,6 +92,13 @@ def around_nextn_model_forward(
             model, input_ids, positions, forward_batch, input_embeds=input_embeds
         )
     from hcu_sglang.models.hyv4_env_hooks import around_model_forward
+    from sglang.srt.runtime_context import get_parallel
+    from sglang.srt.model_executor.forward_context import get_token_to_kv_pool
+
+    if get_parallel().enable_dsa_cache_layer_split:
+        reset = getattr(get_token_to_kv_pool(), "reset_layer_broadcast_cache", None)
+        if reset is not None:
+            reset()
 
     result = around_model_forward(
         original, model, input_ids, positions, forward_batch, input_embeds=input_embeds

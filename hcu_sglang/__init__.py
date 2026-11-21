@@ -221,6 +221,9 @@ def register() -> None:
     kv_cache_dtype.register_hooks()
     swa.register_hooks()
     glm5_layer_split.register_hooks()
+    from hcu_sglang.mem_cache import hyv4_staged_backup
+
+    hyv4_staged_backup.register_hooks()
     hcu_host_pool.register_hooks()
     hcu_mha_pool.register_hooks()
     mla.register_hooks()

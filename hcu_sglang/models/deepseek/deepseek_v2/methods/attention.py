@@ -450,7 +450,7 @@ def forward_absorb_prepare(
             kv_fusion = use_fused_kv_producer(self, forward_batch, positions, latent_cache)
 
         # overlap qk norm
-        if self.alt_stream is not None and get_is_capture_mode():
+        if self.alt_stream is not None and get_is_capture_mode() and not C._is_hcu:
             current_stream = N1.torch.cuda.current_stream()
             self.alt_stream.wait_stream(current_stream)
             q = self.q_a_layernorm(q)

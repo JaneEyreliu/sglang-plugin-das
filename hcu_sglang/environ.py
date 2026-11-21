@@ -57,6 +57,7 @@ def apply_qwen36_serve_defaults() -> None:
 _ENV_SPECS: dict[str, tuple[type, Any]] = {
     "SGLANG_OPT_HY4_IHC_TILELANG": (EnvBool, False),
     "SGLANG_HY4_LINEAR_GATE_CP_SHARD": (EnvBool, False),
+    "SGLANG_OPT_HICACHE_STAGED_LAYER_SPLIT_BACKUP": (EnvBool, False),
     "SGLANG_ENABLE_HCU_CONCAT_MLA_ABSORB_Q": (EnvBool, False),
     "SGLANG_DSA_LIGHTOP_PREFILL_DEQUANT_KV": (EnvBool, False),
     "SGLANG_MOE_C_NATIVE_SORT": (EnvBool, False),

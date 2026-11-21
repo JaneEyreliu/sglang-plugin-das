@@ -5136,3 +5136,33 @@ GSM8K test 前 200 题，以历史 0-shot chat/no_think、temperature0、top_p1�
 结合此前新旧固定批次18/18文本和token IDs一致、合并前代码也能复现三道新增错答，结果支持上轮掉点与批次敏感行为相符，目前未见稳定总分回归。少量重复评测不足以建立正常波动范围，具体算子原因仍未确定，不以最好一次替换原始结果。
 
 原始结果保留于部署相对目录 `hy4_validation_20261124/flash_accuracy_debug/gsm8k_repeat_20261124_162316/`，包含manifest、服务配置、raw-results、repeat-summary、独立评分和逐轮比较；raw-results SHA256 `b6e02142a0fb6fe02dac017a7b419f9bb855a54ab8815bbff08769df7e0869da`。评测后服务health HTTP200，服务继续运行。Adapter七个未跟踪hipify产物保留，不纳入提交。未执行新的算子数值对齐或性能验收。
+
+## 2026-11-21 HY4 分支迁移：CP8/NEXTN 第一阶段
+
+来源为 `JaneEyreliu/sglang-das:feat/hy4_dcp_adapt`，审查范围包含
+`9ef6c8cc8413075a54ef56b8a77dc8ea4a193402` 至
+`49a3350084af4cfd6f3bc8f6c9c48513e6ea8add`。
+plugin 基线为 main `6df16b7`，先合并 PR #86 的 NEXTN/CP8 前置实现；
+保留 main 中 DeepEP clean 签名的缓存判定、INT8 支持、紧凑广播及同步预取默认值。
+官方目标固定为 v0.5.22 `baa9befa381511cd4d56f83980951e5a45fffc6d`。
+
+本阶段补齐 LayerSplit 物理位置转换缓存（源 `81c80f6b`）、MTP 各 rank
+对称重置广播状态（`bc14de2c`）、Mooncake CP namespace 隔离
+（`860684c9`），以及 HCU 图捕获时 q/k norm 与非 SBO shared experts
+的无效跨流依赖（`72f5e4b3`、`d8905fcb`）。没有修改 router 的 FP32 精度。
+源 `a07894a8` 的 CP split kernel 改为运行时 tokens 参数，调用从 plugin
+直接引用；index-buffer accessor 的同类优化仍随后续阶段核对。
+
+`49a33500` 的 staged layer-split HiCache backup 通过 host-pool AROUND
+接口迁入：默认关闭，复用官方 staged transfer kernel；目标 owned layers
+之后接 packed draft layers，保留未启用、非 kernel IO、不可用 kernel 的原始
+路径，并对虚拟 DCP 索引调用当前官方的转换接口。
+
+验证：7 项离线行为测试通过，覆盖各 rank 广播重置顺序、指针层序、索引
+方向与回退，以及 Mooncake CP/PP namespace 隔离。Mooncake 来源定义保持原样，
+namespace 调整在 donor 初始化返回后执行，来源字节校验 3 项通过。
+统一 LF 后基线 393 tests：29 failures、17 errors、52 skipped；
+本阶段首次对比仅新增一项 Mooncake 来源校验失败，改为初始化后适配后该项通过。
+修复后完整 discovery 为 400 tests：29 failures、17 errors、52 skipped，
+失败/错误标识集合与基线相同，无新增失败；L0 通过。全仓历史失败仍待处理。S3 SSH 连接超时，本轮未作 HCU、整模型或性能验证。
+后续阶段继续迁入 DCP2/4/8、PP+MTP 与可选优化；本阶段不声明该范围已支持。

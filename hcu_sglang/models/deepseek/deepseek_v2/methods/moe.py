@@ -782,7 +782,11 @@ def forward_deepep(
                 prefill_stream = _try_glm_prefill_shared_stream(
                     self, forward_batch, hidden_states
                 )
-            if prefill_stream is None and self.alt_stream is not None:
+            if (
+                prefill_stream is None
+                and self.alt_stream is not None
+                and not (C._is_hcu and N0.get_is_capture_mode())
+            ):
                 self.alt_stream.wait_stream(N0.torch.cuda.current_stream())
                 with N0.torch.cuda.stream(self.alt_stream):
                     shared_output = self._forward_shared_experts(hidden_states)
