@@ -5034,3 +5034,5 @@ GSM8K test 前 200 题，以历史 0-shot chat/no_think、temperature0、top_p1�
 ## 2026-11-24：proj/hy4 集成复验
 
 在 `origin/proj/hy4` 的 `1ab503b5c71deb6d768460b518489300bb619d2a` 基础上合入 `aa56f7725089cd5e54136f59deb15e07a6a2120f`。保留分支既有 CP/NEXTN、量化和 DSA 改动；文本冲突只在开发记录与生成导览，保留上游记录后追加 HY4 移植记录并重建导览。Adapter 仍为 `4451637dd2be5b0688baa2ff26d608eb5d7b1543`；以上 GSM8K 数字属于旧基线，本组合结果待本次复验。
+
+集成回归发现：正式版专项 4/4 通过，Flash 初次 5/6；实际 DSATokenToKVPool 在 BF16 MLA 下未启用 FP8 Index-K。`proj/hy4` 的池构造保留 `force_fp8_index_cache` 读取，却在调用 cache-mode resolver 时丢失 `force_fp8` 参数。恢复该参数转交，使模型策略与内存预算一致；保留上游 CP/draft 和 INT8 缓存逻辑。原有真实公共池构造测试即修复前反例，不放宽断言。

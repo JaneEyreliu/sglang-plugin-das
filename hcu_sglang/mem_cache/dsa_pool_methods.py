@@ -145,7 +145,7 @@ def __init__(
     # num head == 1 and head dim == 128 for index_k in DSA
     assert index_head_dim == 128
     self.index_k_cache_mode = K.resolve_index_k_cache_mode(
-        dtype, self.index_page_size, index_head_dim
+        dtype, self.index_page_size, index_head_dim, force_fp8=force_fp8_index_cache
     )
     self.use_fp8_index_k_cache = (
         self.index_k_cache_mode is K.IndexKCacheMode.FP8_SCALED
