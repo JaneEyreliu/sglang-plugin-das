@@ -14,6 +14,9 @@ class TestHipblasltFp8Bmm(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         super().setUpClass()
+        from hcu_sglang.environ import register_envs
+
+        register_envs()
         if not torch.cuda.get_device_properties(0).gcnArchName.startswith("gfx938"):
             raise unittest.SkipTest("requires native FP8 HCU gfx938")
         from hcu_sglang.models.hyv4_fp8_v import hipblaslt_fp8_bmm, load_hipblaslt_fp8_bmm

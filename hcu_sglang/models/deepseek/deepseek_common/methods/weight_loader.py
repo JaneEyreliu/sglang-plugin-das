@@ -625,8 +625,8 @@ def post_load_weights(
                     w_scale = torch.tensor(
                         w_scale, dtype=torch.float32, device=w_kc.device
                     )
-                w_kc = (w_kc.to(torch.bfloat16) * w_scale).contiguous()
-                w_vc = (w_vc.to(torch.bfloat16) * w_scale).contiguous()
+                w_kc = (w_kc.to(torch.bfloat16) * w_scale).to(torch.bfloat16).contiguous()
+                w_vc = (w_vc.to(torch.bfloat16) * w_scale).to(torch.bfloat16).contiguous()
                 self_attn.w_scale = 1.0
 
             self_attn.w_kc = bind_or_assign(

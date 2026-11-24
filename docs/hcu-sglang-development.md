@@ -5200,3 +5200,40 @@ wheel 构建不代表 native 编译或 HCU 执行通过。
 `EagleDraftWorker` 的 scoped draft 构建，以及 scheduler PP relay 的 draft
 hidden/top-k 数据路径；不机械复制旧分支对应的全局 `_PP` 替换。
 PD prefill 的末级 draft 选择、内存 collective 和各阶段缓存所有权仍待逐调用确认。
+
+
+## 2026-11-23 S3 迁移分支运行验证
+
+使用独立部署副本验证 `afaf295`，保留原有三仓脏工作树。验证范围为已实现的
+CP8/NEXTN 与可选 FP8 V projection；完整 DCP、PP+MTP 尚未迁完，不能由本轮
+结果推断支持。精度服务使用真实 prefill，清除模拟接受长度环境变量。
+
+组合部署发现现有环境的额外前置修复未包含在迁移基线：HCU FP8 absorb 权重
+乘 FP32 scale 后被提升为 FP32，现显式转回 BF16；主模型与 NEXTN 两条路径
+均用相同输入回归，修复前失败、修复后通过。该修复来自现有环境工作树，
+不归因于指定源提交范围。HCU 原生测试补齐插件环境变量注册，4 项数值、
+布局、动态 scale 和投影 Graph 重放测试通过，已实际编译运行 hipBLASLt 扩展。
+
+启动时 adapter 与 plugin 的 SlimQuant 双注册被明确拒绝；使用
+`HCU_SLIMQUANT=0` 由 plugin 提供量化实现，避免绕过所有者冲突检查。
+整模型：CP8、TP8、EP8、NEXTN 3 steps / topk1 / draft4，真实 prefill，
+FP8 V projection 开启。GSM8K 前 200 题，no_think、0-shot、temperature=0、
+并发 16、max_tokens=4096，195/200（97.5%）；无无效答案，200 条均
+finish_reason=stop。日志确认 decode CUDA Graph=True、接受长度未模拟。
+八个调度进程均映射新 hipBLASLt FP8 BMM 共享库并记录 SHA256。
+精度之后开始 32K 输入 / 128 输出 / 64 请求、客户端并发 64 的 prof，
+服务 max-running-requests=16；真实 prefill 配置，不与旧 fake decode 直接混比。
+原始命令、环境、源码哈希、逐题结果、日志和库映射记录在独立验证目录，
+prof 完成情况待后续记录。
+
+
+## 2026-11-24 整理迁移提交到 feat/hy4
+
+基于用户指定远端 `JaneEyreliu/sglang-plugin-das:feat/hy4` 的 `0d21733`，
+保留其 Flash/formal 与其他现有实现，依次迁入 `71541b9`、`b2737e4`、
+`afaf295` 和 S3 实测补充 `9a1927a`，不重放已存在的 PR86 前置合并。
+LayerSplit 清理冲突保留现有 compact Index-K 状态清理并增加 loc cache 清理；
+开发记录两边保留，导览重新生成。7 项缓存生命周期/namespace/backup 回归
+通过，导览一致性通过。S3 的 HCU 与 GSM8K 结果来自 11 月 23 日的独立
+迁移部署，不作为合并 Flash/formal 后的新整模型验收；本轮没有重复 GPU 测试。
+完整 DCP、PP+MTP 与其余可选优化仍未完成，prof 尚无已确认完成结果。
