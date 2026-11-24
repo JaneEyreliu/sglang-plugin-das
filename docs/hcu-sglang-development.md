@@ -5036,3 +5036,15 @@ GSM8K test 前 200 题，以历史 0-shot chat/no_think、temperature0、top_p1�
 在 `origin/proj/hy4` 的 `1ab503b5c71deb6d768460b518489300bb619d2a` 基础上合入 `aa56f7725089cd5e54136f59deb15e07a6a2120f`。保留分支既有 CP/NEXTN、量化和 DSA 改动；文本冲突只在开发记录与生成导览，保留上游记录后追加 HY4 移植记录并重建导览。Adapter 仍为 `4451637dd2be5b0688baa2ff26d608eb5d7b1543`；以上 GSM8K 数字属于旧基线，本组合结果待本次复验。
 
 集成回归发现：正式版专项 4/4 通过，Flash 初次 5/6；实际 DSATokenToKVPool 在 BF16 MLA 下未启用 FP8 Index-K。`proj/hy4` 的池构造保留 `force_fp8_index_cache` 读取，却在调用 cache-mode resolver 时丢失 `force_fp8` 参数。恢复该参数转交，使模型策略与内存预算一致；保留上游 CP/draft 和 INT8 缓存逻辑。原有真实公共池构造测试即修复前反例，不放宽断言。
+
+### proj/hy4 本次复验结果（2026-11-24）
+
+实际运行 Plugin `0e2ccdb2cd14003d5b978ece13c3dc72e352ac2c`，基于 `proj/hy4` 的 `1ab503b5c71deb6d768460b518489300bb619d2a`；移植提交 `5a7d4824917933be54fe81f647b35dc8b3bcf0f8`，再补回 FP8 Index-K 分配参数。Adapter `4451637dd2be5b0688baa2ff26d608eb5d7b1543`，官方 SGLang `baa9befa381511cd4d56f83980951e5a45fffc6d`。
+
+修复后正式版集成 4/4、Flash 集成 6/6 通过。正式模型 245 分片加载成功，TP8/EP1、BF16 MLA、W4A8、decode Graph bs1/2/4、9/9 语义/stop/并发/重复/分块 prefill 检查通过；数据集日志确认 Graph 持续生效。Flash 整模型与数据集未在新组合重跑，不将旧 Flash 分数转记为本组合结果。
+
+同一 GSM8K test 前 200 题、0-shot chat/no_think、temperature0、top_p1、max_tokens4096、client16/server4，无重试，得到 **195/200（97.5%）**；正常 stop 200、invalid 0、truncated 0。旧基线 196/200；新增错题索引 [187]，改善索引 []。独立分数 boxed 解析成功 200/200，正确 195，与历史评分分歧索引 []；原始标准答案和评分保持不变。
+
+关键服务参数、评测协议和 6 个原生库哈希与旧基线一致；checkpoint 配置、官方源码未改。原始结果 SHA256 `bce27db5659b7eec8371a5176a0ef0e2fee8adb810bfede7520446de08ac2e61`。部署相对证据目录 `hy4_validation_20261124/proj_hy4/` 保留初次失败、修复后测试、版本/ABI、原始响应、两种评分和逐题比较；评测后健康检查 HTTP 200。L0 940 个 Python 文件及导览构建/快照通过。结论只覆盖这 200 题子集与正式版文本配方，不外推 VL、MTP、CP/DCP、PD、HiSparse、长上下文或性能。
+
+唯一新增错题为零基索引187：100美元借款、月息2%、3个月。标准答案按单利为106；旧基线同时分析单利/复利后选择106，本次同样计算两种情况但最终选择复利106.12。两次均正常stop，两种评分都判本次错误，不能归因于答案提取或截断。保留原分数195/200，不因题意讨论调整。尚未做同批次布局/同前缀logits的受控A/B，不能将0.5个百分点差异直接归因为量化错误或断言只是运行波动。
