@@ -109,3 +109,8 @@ flowchart TB
 当前逐路径差异处置见 [迁移执行台账](../plans/sglang-das-execution.json)，维护规则见 [三方迁移](migration.md#全量差异执行台账)；当前 Hook 合同见 [目标清单](hcu-sglang-development.md#历史-json-快照)（`hcu-sglang-targets.json`）。
 
 GLM5.2 INT4 的单实例配方、适配过程与历史结果边界见 [GLM5.2 INT4 适配与0518对照](glm52-int4-adaptation.md)。
+
+
+## HY4-Flash HCU
+
+[HY4-Flash HCU adaptation](hy4-flash-hcu.md) records the community-main source, official 0.5.22 integration, TP8 W4A8 launch and validation boundaries. Use the existing hcu-plugin-dev Skill for changes to this port.

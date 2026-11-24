@@ -1,0 +1,28 @@
+{
+  "pr": "https://github.com/sgl-project/sglang/pull/51672",
+  "head_branch": "feature/multimodal-spec-support",
+  "sha": "74c6c8eedf696b0b7d897284fd4be5d6aa65e38c",
+  "files": {
+    "py_scr/hy4_formal_env.sh": "effc7e909c4e0804708022828327c358ec2d6cd060d53af3f227fae2afb8bd56",
+    "py_scr/hy4_formal_tp8.sh": "8392e32d6c45ec5d1df9f500cc7e8a3b138b093edd8460496aea4fd7c8b7fe5f",
+    "py_scr/test_hy4_formal_service.py": "1c39cf65d18d07a2eb465bc80021b75f049836d6874651ae82f039a5d38845bf",
+    "hy4_validation_20261124/formal_port/RESULT.md": "4b1192671fdb34030785aaab3512bbdb719f30841fe87bf082ba4279b444abf0",
+    "sglang-plugin-das/docs/hcu-sglang-development.md": "0d9de3752e4b41f293e78d3f8ec1f6e32f6ce662717e7bec09daa0ee813dc527",
+    "sglang-plugin-das/hcu_sglang/__init__.py": "2b6332648c9c2ae717805941152916870a7e818a1119ac8e9c52b8eb1f9f4e12",
+    "sglang-plugin-das/tests/test_hyv4_formal_integration.py": "a69f3aabe1e4082d51e0f9e32c9018ad593d83c6f5a4e8afa8fc0b46d40a9d83",
+    "sglang-plugin-das/hcu_sglang/models/hyv4_formal/config.py": "a52f6e20910c2a6f73263e34b424a06386a7458f176d59f76ccc6065456a3ec6",
+    "sglang-plugin-das/hcu_sglang/models/hyv4_formal/model.py": "750488439ad9ab85c45323654dd5ef7f285bd1efd455789f31a529e497796ca8",
+    "sglang-plugin-das/hcu_sglang/models/hyv4_formal/text.py": "d6a3e652eec582df9d28a20f97c35bce2434bac8cc133073789ac2348e6733f0",
+    "sglang-plugin-das/hcu_sglang/models/hyv4_formal/utils.py": "97ff6c5c002830a837034b0a8ca4d30c886bc376628cda35248f0dcef743984e",
+    "sglang-plugin-das/hcu_sglang/models/hyv4_formal/__init__.py": "bb17890e8c41ab8b0e43bc0be9bee12935456664b533e15fb6e66dd081cc7721",
+    "sglang-plugin-das/hcu_sglang/models/hyv4_formal/external/hyv4_formal.py": "9d3ea0576cfb5ea71c94d86791bbf5c7539e8db2a9096395114930994b442153",
+    "sglang-plugin-das/hcu_sglang/models/hyv4_formal/external/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "transformations": [
+    "Owned formal VL wrapper and text model, text-only scope",
+    "0.5.22 layer_stack PP1 construction",
+    "Adapter iHC Triton kernels",
+    "Existing mixed W4A8 CT packed loader and scale names",
+    "Scoped config, DSA, geometry hooks; original source and checkpoint untouched"
+  ]
+}

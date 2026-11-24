@@ -1,0 +1,57 @@
+{
+  "upstream": "2544c9ac34be4447bdffa612c37015a3f8da9e84",
+  "source_files": {
+    "hy4_flash_indexpool.py": "990267e8127f0d0792ea9dc58da6974a2edfd94ea4b0a805470f72247131a28a",
+    "hy4_flash_engram.py": "5f17c065f3dc97867950f46bcb452edc6f6883da3b2de819129660b4d977dedc",
+    "hy4_ihc.py": "364138a9c1591de024c8ea22b2e00c176a86d42d169472fa249b9ae0baea632b",
+    "hunyuan_v4_flash.py": "46c572075214640a584ca552dfcfe0f109439712cc5fc8059dad96772a7b3355",
+    "hy_v4_flash.py": "19971b1d8a8467dd49037cdee905580d957514453477f69e64df7b5bfee61af8",
+    "hy_v4.py": "ce88e849ceb3ec7af1df64cbc347ae201cb93018dd3cd58a44408824e85e1b50",
+    "hunyuan_v4_vl.py": "ef5fee7f025a264c131106895276178ce6c58d0736de0e5d92f73171f33a848f",
+    "hy_v4_vl_processing.py": "2233ff86f2b09e7e2e098318212d379d434a967ae1e4a47f9363ad9501293f9b"
+  },
+  "baseline": {
+    "sglang": "baa9befa381511cd4d56f83980951e5a45fffc6d",
+    "adapter-das": "94911d1",
+    "sglang-plugin-das": "6df16b7"
+  },
+  "transformations": [
+    "Own model/config in plugin; main kernels in adapter",
+    "0.5.22 multimodal type imports",
+    "Owned vision config extracted from main",
+    "Torch topk replaces NVIDIA FlashInfer",
+    "Mixed CT INT8 dense/shared FFNs and native scale names",
+    "Packed INT4 expert loader uses existing plugin CT conversion",
+    "Scoped model geometry and DSA hooks; official source untouched",
+    "0.5.22 TopK STANDARD output replaces main runner binding",
+    "Flash scaled FP8 Index-K policy shared by allocation and budget; MLA remains BF16",
+    "Window indices use full index_topk width padded by invalid entries for 0.5.22 decode ABI",
+    "Require fused Top-K physical-address consumer to prevent a second page-table translation"
+  ],
+  "destination_files": {
+    "py_scr/hy4_flash_env.sh": "cb847d9ddc06fef6db060d66d6e4dc34f4225c60fe3ba6d17d4848171047565c",
+    "py_scr/hy4_flash_tp8.sh": "947637d7bf75a78dc8daec30300f8da9a2ff7178a81aade32ff4774631d7a7cf",
+    "py_scr/test_hy4_flash_expert.py": "a99a980d74ed9cdba329e0d6aa1a06687105142e18b51a755bd868942ddbf8d0",
+    "py_scr/test_hy4_flash_fused_norm.py": "0423c16ef328d65dd0cc0cb05beb7a3ba0e866298ba59dba9b001ddf69cb19bb",
+    "py_scr/test_hy4_flash_indexpool.py": "68ade3dc1f272aebd815a3c1b3a62d5a87d7a011233d757f09f26f0de813a42c",
+    "py_scr/test_hy4_flash_kernels.py": "e68bf754dfdd521b52b335edd547153cad9d810bb8708e30d06ae3b63dba9767",
+    "py_scr/test_hy4_flash_pool_update.py": "9d3a664950d69763c2e39ffc67ef299c3cf05da1ab59bada95028b73720cbff6",
+    "py_scr/test_hy4_flash_service.py": "8df478ce89ce007bb9a0f5f972234383a3643e6c7b9cdacb4fcb4e80d5263e0d",
+    "adapter-das/hcu_adapter/hy4_flash_ops/hy4_flash_engram.py": "5f17c065f3dc97867950f46bcb452edc6f6883da3b2de819129660b4d977dedc",
+    "adapter-das/hcu_adapter/hy4_flash_ops/hy4_flash_indexpool.py": "990267e8127f0d0792ea9dc58da6974a2edfd94ea4b0a805470f72247131a28a",
+    "adapter-das/hcu_adapter/hy4_flash_ops/hy4_ihc.py": "364138a9c1591de024c8ea22b2e00c176a86d42d169472fa249b9ae0baea632b",
+    "adapter-das/hcu_adapter/hy4_flash_ops/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "sglang-plugin-das/hcu_sglang/__init__.py": "939aeda819c0fc234e985fa4de30fb0a862385fb14e5b8564b38b67da964e57c",
+    "sglang-plugin-das/tests/test_hyv4_flash_integration.py": "3921f66b686bcf16aba3f4f3006748cea14b9db2ec2844e3600e5bf8a5acd542",
+    "sglang-plugin-das/hcu_sglang/mem_cache/dsa.py": "1f6d00e363c143c18ead976cfa57180940e781de2fdc627ca433a7bfec0dd6e0",
+    "sglang-plugin-das/hcu_sglang/mem_cache/glm5_index_cache.py": "372b6405a4e1364bef1bfb2178792e02517f9e9feaa8b3b2fc95d48f497334e4",
+    "sglang-plugin-das/hcu_sglang/models/hyv4_flash/config.py": "96a84848263a16000244dd71f2fb7d5c577875b8f9fa4db9909da2ba90269e36",
+    "sglang-plugin-das/hcu_sglang/models/hyv4_flash/model.py": "dad242408e217fc15cbc9e8e4ef9afe51546cbfd27f16a7a2c804c79b641feab",
+    "sglang-plugin-das/hcu_sglang/models/hyv4_flash/processing.py": "b0d96e16afc9bd7fdd3298e1550a6e29a388dab8c5bbbcbe4e445a4868112d42",
+    "sglang-plugin-das/hcu_sglang/models/hyv4_flash/vision.py": "6f1ffed4ad13f399c5cb937b7e8edd72bb8ca4031eafc792364408bf0410cecd",
+    "sglang-plugin-das/hcu_sglang/models/hyv4_flash/vision_config.py": "2f39e573027f15c0f12175331eace93d1e4215d0f70bc0835c2625f886701048",
+    "sglang-plugin-das/hcu_sglang/models/hyv4_flash/__init__.py": "423ec489527eb2c56e8a34da82a1459721697b87582d7f2b914b1bde8fa9c623",
+    "sglang-plugin-das/hcu_sglang/models/hyv4_flash/external/entry.py": "1be412d5320341bfe988555e7967619d26aac9192126962454b5bb0db3aea0ce",
+    "sglang-plugin-das/hcu_sglang/models/hyv4_flash/external/__init__.py": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
+  }
+}

@@ -21,6 +21,12 @@ def register() -> None:
     apply_qwen36_serve_defaults()
     register_envs()
 
+    from hcu_sglang.models.hyv4_flash import register_hooks as register_hyv4_flash
+    register_hyv4_flash()
+
+    from hcu_sglang.models.hyv4_formal import register_hooks as register_hyv4_formal
+    register_hyv4_formal()
+
     if os.environ.get("HCU_KIMI31_DAY0") == "1":
         from hcu_sglang.kimi31_day0 import register_hooks
         register_hooks()

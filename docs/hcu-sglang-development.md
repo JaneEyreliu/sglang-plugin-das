@@ -4999,3 +4999,38 @@ adapter 当前分支与最新 upstream `release/sglang_v0.5.22` 均为
 本文前面的 GPU/Graph/模型/性能数字均为旧证据，不外推至本次新 upstream 组合；
 本次没有重启服务、重跑 GPU kernel、完整模型、SLA 或浏览器渲染。导览模板与交互
 未修改，仅重建文档快照，快照检查不代替视觉验收。
+
+## 2026-11-23 HY4-Flash main backport to official 0.5.22
+
+Community main `2544c9ac34be4447bdffa612c37015a3f8da9e84` model/config is registered as an owned external model; existing official source is preserved. Adapter provides the community IndexPool, Engram and iHC Triton modules. Mixed CT W4 expert/W8 linear loading is adapted through existing plugin quantization. Scope, source hashes, registration/shape boundaries, launch and validation are recorded in [HY4-Flash HCU adaptation](hy4-flash-hcu.md) and `hy4-flash-source-manifest.json`.
+
+Native gfx938 compilation, six public integration tests, component numerical/Graph checks, and actual-checkpoint W4/W8 tests passed. Fixing the physical-index consumer mode changed all nine eager semantic smoke checks from failures to correct complete answers and normal stops. Full decode Graph acceptance is recorded in the linked adaptation guide; no benchmark accuracy or performance claim is made.
+
+## 2026-11-24：正式版 HY4 文本入口移植与八卡验收
+
+参照社区 PR [#51672](https://github.com/sgl-project/sglang/pull/51672) 的 `feature/multimodal-spec-support`，固定 `74c6c8eedf696b0b7d897284fd4be5d6aa65e38c`；本次查询时 PR 尚未合入 main。Flash 的社区来源另为 main `2544c9ac34be4447bdffa612c37015a3f8da9e84`，两者不可混同。来源快照见 `hy4-formal-source-manifest.json`，该清单保留移植时语义，不作为后续文档的当前哈希证明。开发流程使用 [hcu-plugin-dev](../skills/hcu-plugin-dev/SKILL.md)。
+
+新增 `hcu_sglang.models.hyv4_formal`，保留社区正式 VL 包装及文本模型，实际入口为 `HYV4VLForConditionalGeneration`，验收仅覆盖 text-only。只注册 `hy_v4_vl`，不覆盖 Flash 或 `hy_v4`；checkpoint 配置和官方 SGLang 源码不改。0.5.22 layer_stack 负责 PP1 stage 链，post-projection norm 显式拒绝。Adapter 提供 `hy4_flash_ops.hy4_ihc`；MLA/DSA、W4A8 专家与 W8A8 Linear 复用既有 plugin。Flash hooks 后追加 formal hooks；其他架构转交传入 original，临时文本 shape 视图在 finally 恢复。
+
+| 分支 | 数据与状态合同 | 本次验证 |
+|---|---|---|
+| 权重映射 | `model.*`→language model；text-only 跳过 `vit.*` 与 draft 前缀 | 正式 checkpoint 245 分片加载与真实生成 |
+| W4A8 专家 / W8A8 Linear | 既有 mixed CT packed-byte 转换、动态 token INT8，保留 scale 名称 | 配置/索引测试、真实模型加载生成；正式模型未另做逐层全参数数值对照 |
+| Indexer RoPE | heads32×128、rope64；wk/k_norm 单头，权重与 scale 同步置换 | CPU 同输入精确检查、实际 prefill/decode |
+| iHC pre/post | `[T,4,6144]` BF16、FP32 gates，配置 RMS/hc eps | T=0/1/4/65 独立数值参考、完整 stage 与 decode Graph |
+| iHC norm/head | 无 HPC policy 的社区独立 norm/torch head | 完整服务；未验证 HPC 路径 |
+| DSA KV | formal `SGLANG_DSA_FUSE_TOPK=0`，Flash 必须为 1 | 正式真实 prefill/decode，未混用 Flash IndexPool 协议 |
+
+从部署根目录执行 `bash py_scr/hy4_formal_tp8.sh`；Eager 增加 `--disable-cuda-graph`。配方 TP8/EP1、text-only、context8192、chunk2048、max-running4、KV16384、NCCL，decode Graph bs1/2/4。专项检查入口：`HCU_PLUGIN_RUN_GPU_TESTS=1 python3 sglang-plugin-das/tests/test_hyv4_formal_integration.py -v`。
+
+2026-11-24 专项集成 4/4 通过；资源释放后无需追加运行时修复，正式模型完成 245 分片加载。Eager 和 decode Graph 各 9/9 语义、正常 stop、并发、重复与分块 prefill 检查通过；连续 64 个 token ID 完全一致，日志确认 Graph 生效。L0 与导览构建/快照检查通过。
+
+GSM8K test 前 200 题，以历史 0-shot chat/no_think、temperature0、top_p1、max_tokens4096、client16/server4 配方得到 **196/200（98.0%）**。200 条均正常 stop，零无效、零截断、无重试。独立支持分数的 boxed 解析器复核后正确性判定一致；保留原始标准答案和四条错误，不调整分数。数据 SHA256 为 `3730d312f6e3440559ace48831e51066acaca737f6eabec99bccb9e4b3c39d14`。详细证据位于部署根目录 `hy4_validation_20261124/formal_port/RESULT.md` 和 `gsm8k_chat_200_20261124_133513/`，不将本地日志纳入源码仓。
+
+这是固定 HCU 环境的 200 题子集结果，没有同 checkpoint 的社区服务数值基线。VL、DFly/MTP、PP、CP/DCP、PD、HiSparse、prefill Graph、长上下文精度和性能调优未验收。服务在验收后保留；本文不把历史 PID 当作当前健康证明。
+
+配套 Adapter 提交：`4451637dd2be5b0688baa2ff26d608eb5d7b1543`，包含 IndexPool、Engram、iHC；官方基线 `baa9befa381511cd4d56f83980951e5a45fffc6d`，Plugin 移植基线 `6df16b7acca0407c35b229e2c18dc724c60bf2bc`。本次整理未同步 origin/main 或改动运行时代码。
+
+## 2026-11-24：proj/hy4 集成复验
+
+在 `origin/proj/hy4` 的 `1ab503b5c71deb6d768460b518489300bb619d2a` 基础上合入 `aa56f7725089cd5e54136f59deb15e07a6a2120f`。保留分支既有 CP/NEXTN、量化和 DSA 改动；文本冲突只在开发记录与生成导览，保留上游记录后追加 HY4 移植记录并重建导览。Adapter 仍为 `4451637dd2be5b0688baa2ff26d608eb5d7b1543`；以上 GSM8K 数字属于旧基线，本组合结果待本次复验。

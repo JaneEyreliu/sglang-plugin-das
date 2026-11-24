@@ -25,8 +25,16 @@ def fp8_index_cache_active():
     return _FP8_INDEX_CACHE.get()
 
 
+def uses_fp8_index_cache(config):
+    return uses_glm53_flash_fp8(config) or (
+        is_hcu()
+        and "HYV4FlashForConditionalGeneration"
+        in (getattr(config, "architectures", None) or ())
+    )
+
+
 def around_build_pool(original, configurator, **kwargs):
-    token = _FP8_INDEX_CACHE.set(uses_glm53_flash_fp8(configurator.model_config.hf_config))
+    token = _FP8_INDEX_CACHE.set(uses_fp8_index_cache(configurator.model_config.hf_config))
     try:
         return original(configurator, **kwargs)
     finally:
