@@ -59,3 +59,7 @@ On 2026-11-23 the first 200 questions from the existing official GSM8K test.json
 ## 2026-11-24 proj/hy4 follow-up
 
 The same runtime used for the formal model was revalidated with Flash. TP8 decode Graph and nine generation checks passed. Same-protocol GSM8K first 200 scored 190/200 versus 193/200 on the old baseline; normal stops 200, invalid 0, truncated 0. See the dated [development record](hcu-sglang-development.md) for fixed versions, independent rescoring, changed questions and limitations. Raw evidence is retained outside Git under `hy4_validation_20261124/proj_hy4_flash/`.
+
+## 2026-11-24 repeat accuracy result
+
+The unchanged runtime repeated the same first-200 GSM8K chat/no_think protocol and scored **193/200 (96.5%)**, compared with 190/200 in the preceding run and 193/200 historically. All 200 requests stopped normally; independent scoring agreed, with no invalid or truncated outputs. Relative to the preceding run, indices 30, 125 and 187 improved and none regressed. This is consistent with the reproduced batch-sensitive behavior; the small number of runs does not establish a normal variation range or identify the responsible operator. See the dated [development record](hcu-sglang-development.md) for versions, evidence and limitations.

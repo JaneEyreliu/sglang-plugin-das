@@ -5118,3 +5118,21 @@ GSM8K test 前 200 题，以历史 0-shot chat/no_think、temperature0、top_p1�
 版本比较应同时保留原并发配方与固定请求批次/单请求控制，不用挑选重试结果调高精度。若继续定位具体算子，下一步以163第38个token的相同前缀进行Graph开关和算子输出对照；当前没有证据支持盲改权重、量化或合并代码。
 
 远端原始证据：/workspace/sgl_0522_1123/hy4_validation_20261124/flash_accuracy_debug/。核心文件为 code-ab-comparison.json、code-ab-config-comparison.json、logprob-differences.json、batch-first-divergence.json、四组 replay 原始请求/响应及 summary.json。原数据SHA256：3730d312f6e3440559ace48831e51066acaca737f6eabec99bccb9e4b3c39d14。
+
+## 2026-11-24：HY4-Flash 同配方第二次全量200题复测
+
+本轮仅整理既有精度诊断和重复评测证据，没有修改运行时代码。Plugin实际评测提交 `afa0cbdd01c020a685b2b796c58abdb35fd2d5cf`，运行时目录树 `b7d20228d6afa9ca78cdb4c8133f7007515537f5`，与此前 `3ee67be` 一致；Adapter `4451637dd2be5b0688baa2ff26d608eb5d7b1543`，官方SGLang `baa9befa381511cd4d56f83980951e5a45fffc6d`。
+
+复用原始GSM8K test前200题、原脚本、0-shot chat/no_think、temperature0/top_p1、max_tokens4096、client16/server4，无重试。数据与脚本SHA256、200份请求体均核对一致，关键服务配置含随机种子342649703与上轮一致。服务为Flash TP8/EP1、W4A8，decode Graph继续启用。
+
+| 轮次 | 正确数 | 精度 |
+|---|---:|---:|
+|历史旧插件|193/200|96.5%|
+|proj/hy4首次复验|190/200|95.0%|
+|proj/hy4本轮复测|193/200|96.5%|
+
+本轮200题正常stop，invalid0，截断0；独立boxed解析200/200成功、193题正确、与原评分分歧0。相较上轮改善零基索引 `[30,125,187]`，新增错题 `[]`，文本完全相同73/200。相较历史改善 `[30,187]`、退化 `[87,163]`，文本完全相同66/200；总分相同不等于逐题输出相同。当前错题 `[40,87,93,100,119,163,184]`。生成46260 tokens，原评测脚本报告537秒。
+
+结合此前新旧固定批次18/18文本和token IDs一致、合并前代码也能复现三道新增错答，结果支持上轮掉点与批次敏感行为相符，目前未见稳定总分回归。少量重复评测不足以建立正常波动范围，具体算子原因仍未确定，不以最好一次替换原始结果。
+
+原始结果保留于部署相对目录 `hy4_validation_20261124/flash_accuracy_debug/gsm8k_repeat_20261124_162316/`，包含manifest、服务配置、raw-results、repeat-summary、独立评分和逐轮比较；raw-results SHA256 `b6e02142a0fb6fe02dac017a7b419f9bb855a54ab8815bbff08769df7e0869da`。评测后服务health HTTP200，服务继续运行。Adapter七个未跟踪hipify产物保留，不纳入提交。未执行新的算子数值对齐或性能验收。
