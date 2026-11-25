@@ -119,6 +119,22 @@ def triton_scaled_mm(
             except Exception:
                 pass
 
+    if (
+        _is_hcu
+        and a.ndim == 2
+        and b.ndim == 2
+        and a.dtype == torch.int8
+        and b.dtype == torch.int8
+        and 16 < a.shape[0] <= 64
+        and a.shape[1] == b.shape[0]
+        and a.shape[1] % 128 != 0
+        and b.stride() == (1, b.shape[0])
+    ):
+        from lightop._lmslim_native.layers.gemm.int8_utils import matmul_int8
+
+        output = matmul_int8(a, scale_a, b, scale_b, out_dtype, best_config)
+        return output if bias is None else output + bias
+
     return quant_ops.triton_scaled_mm(
         a, b, scale_a, scale_b, out_dtype, bias, best_config
     )

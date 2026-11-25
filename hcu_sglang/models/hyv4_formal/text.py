@@ -754,7 +754,7 @@ class HYV4Attention(DeepseekV2AttentionMLA):
     ):
         # Output keeps top-k only for a sharing successor; record the producer's rows.
         if self.dfly_topk_capture is not None:
-            self.dfly_topk_capture.record(self.layer_id, topk_indices)
+            self.dfly_topk_capture.record(self.layer_id, topk_indices, forward_batch)
         return super().forward_absorb_core(
             q_pe,
             k_pe,

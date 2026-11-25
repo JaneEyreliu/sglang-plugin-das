@@ -36,7 +36,7 @@ def formal_defaults(server_args, hf_config):
     if getattr(hf_config.text_config, "attn_post_proj_norm", False):
         raise ValueError("HY4 formal post-projection norm is not ported")
     unsupported = {
-        "speculative decoding": cfg.speculative_algorithm is not None,
+        "speculative decoding": cfg.speculative_algorithm not in (None, "DFLY"),
         "prefill CP": cfg.enable_prefill_cp,
         "DCP": cfg.dcp_size > 1,
         "DP attention": cfg.enable_dp_attention or cfg.attn_dp_size > 1,

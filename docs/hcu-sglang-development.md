@@ -5237,3 +5237,51 @@ LayerSplit 清理冲突保留现有 compact Index-K 状态清理并增加 loc ca
 通过，导览一致性通过。S3 的 HCU 与 GSM8K 结果来自 11 月 23 日的独立
 迁移部署，不作为合并 Flash/formal 后的新整模型验收；本轮没有重复 GPU 测试。
 完整 DCP、PP+MTP 与其余可选优化仍未完成，prof 尚无已确认完成结果。
+
+
+## 2026-11-24 HY4 / HY4-Flash DFLY 首次验证（BF16草稿，历史记录）
+
+固定来源：SGLang `hy4_flash_squash` 的 `ccb8d9ccaa309f71dda42e37517a7b0ee6afae8d`；部署基线 plugin `7d3e55b`、adapter `4451637`、official `baa9befa`。通过公共 `SpeculativeAlgorithm.register` 接入 DFLY，复用 DFLASH 的线性 block verify 调度；算法不是通用 DFLASH，官方源码未改。
+
+nmz26 / sgl0522_hy4_1123 验证范围：Flash 和正式版均为 TP8/EP1/PP1/CP1/DCP1，greedy，无 grammar/logprob，language-model-only，BF16 主 KV。PD、LoRA、DP attention 及 PP/CP/DCP>1 明确拒绝；其他并行配置未验证。Flash block6，formal block7；各 checkpoint 自带五层草稿，不使用 NEXTN。
+
+实现包含 slot0 fusion、hidden correction、请求槽状态、target top-k 保存、因果当前块、候选验证与已接受前缀提交；Flash 的 Engram history 延迟提交，formal logical top-k 通过实际页表转换成 physical KV 槽。草稿 2176 索引宽度暂用现有 flashmla_sparse，target verify 保持 flashmla_kv，finally 恢复 backend/metadata。
+
+目标模型仍 W4A8。草稿通道 INT8 权重加载时乘每输出通道 scale 并转 BF16，不能恢复量化前原始权重；社区该来源的草稿 kv_b_proj 也明确要求 BF16。本次统一反量化是正确性过渡方案，尚未适配原生 INT8 草稿性能。草稿选词采用 FP32 head matmul；不能由接受长度推断加速比。
+
+Flash 并发验证发现 LightOp 小 M / K tail 的原生 INT8 GEMM 输出 NaN：真实 down_proj K1728/N3072，M18/24/28/32 失败而 M1/6/12/65 正常。插件仅对 INT8、转置连续 B、16<M<=64、K 非128对齐的范围调用 LightOp 现有 masked Triton matmul_int8，其他路径维持有效原实现。实际 SlimQuant Linear 数值和更换输入的 CUDA Graph replay 回归通过。
+
+DFLY 契约 7 项、既有 Flash 集成 6 项、formal 集成 4 项通过；2176列 sparse attention 与 PyTorch 参考误差最大约5.3e-4。两个模型 eager / Graph 各9项语义检查通过，包括并发、槽复用与长输入。Graph capture bs=[1,2,3,4]，评测 decode 日志确认 graph=True。
+
+GSM8K 前200题：0-shot/no_think、temperature0/top_p1、max_tokens4096、客户端16/服务4、无重试；数据 SHA256 `3730d312f6e3440559ace48831e51066acaca737f6eabec99bccb9e4b3c39d14`。与基线请求一致，仅增加 return_meta_info 统计；boxed/Fraction 独立复核一致，均200条stop、无无效输出。
+
+| 模型 | 非 MTP | DFLY | 草稿接受率 | 加权接受长度 |
+|---|---:|---:|---:|---:|
+| HY4-Flash | 191/200 | 191/200 | 58.98% | 3.9344 |
+| HY4 正式版 | 196/200 | 195/200 | 62.34% | 4.7325 |
+
+正式版相对基线少1题（第187题，下降0.5个百分点），原因未定位，不能认定为正常波动或宣称无精度损失。总分不能证明逐 token 一致；逐题改善/回退和原始响应见每轮 summary.json / raw-results.jsonl。当前未测原生 INT8 草稿或加速比。完整来源、源码哈希、命令、日志与逐题数据归档于 hy4_validation_20261124/dfly_port_20261124；本地 artifacts/hy4_dfly_port_20261124/REPORT.md。adapter 的7个既有hipify未跟踪产物未改、未提交。
+
+
+## 2026-11-24 HY4 MTP 权重处理对齐社区与量化验证
+
+固定社区来源为 [hy4_flash_squash@ccb8d9cc](https://github.com/sgl-project/sglang/tree/ccb8d9ccaa309f71dda42e37517a7b0ee6afae8d)，本次查询分支仍为该提交，仅有 Flash DFLY 模块。组合部署：nmz26 / sgl0522_hy4_1123 / /workspace/sgl_0522_1123；plugin feat/hy4@7d3e55b 基础上的未提交改动，adapter4451637，official baa9befa。official源码未改，adapter的7个原有hipify未跟踪文件未改、未提交。
+
+本版删除统一反量化的 checkpoint.py，Flash/formal草稿继承目标模型quant_config，依据checkpoint的targets/ignore选择W8A8 Linear或BF16，保留INT8码值与FP32 per-channel scale；量化Linear的激活按dynamic per-token INT8处理。MLP构造、fusion、分片映射、草稿_greedy方法的AST与社区一致。选词恢复torch.mm(hidden, weight.T, out_dtype=torch.float32)，输入保持BF16；本机HCU PyTorch2.11支持且Graph replay数值测试通过。
+
+Flash checkpoint的kv_b_proj、fusion和hidden correction原本BF16，保持社区处理。正式版checkpoint额外量化q/kv_a、kv_b和hidden correction：前者及hidden correction按配置构造量化Linear；kv_b原始INT8参数及FP32 scale保留，沿社区DeepSeek MLA的channel INT8数学，用BF16(weight)*BF16(scale)仅生成吸收式K/V的BF16派生矩阵，再沿相同布局拆分。社区Flash-only DFLY本身没有这一正式版checkpoint处理，以上明确属于必要扩展，不能称逐行相同。
+
+HCU量化provider注册字段为weight_scale，因此compressed-tensors/slimquant路径保留该名字；其他格式沿既有normalize_hyv4_weight_scale处理，不对原始scale统一加_inv。HCU原生GEMM与社区CUDA kernel不同，量化配置和加载语义对齐不代表跨硬件逐bit相同。
+
+先前的必要HCU适配保持：草稿2176索引宽度使用flashmla_sparse，target verify使用flashmla_kv，finally恢复backend/metadata；保留0.5.22调度接口兼容、请求状态与Engram提交适配。范围仍为文本、greedy，TP8/EP1/PP1/CP1/DCP1，BF16主KV，Flash block6/formal block7；无grammar/logprobs、PD、LoRA或DP attention。两模型checkpoint各自bundled五层草稿，不使用NEXTN。
+
+10项DFLY契约全部通过，包含真实配置选择、原INT8码值/FP32 scale精确保留、正式版派生KV数值及原参数不变、社区mm接口更换输入后的Graph回放。Flash/formal各9项生成检查通过，包含并发、请求槽复用与长输入；Graph capture bs=[1,2,3,4]，评测decode日志确认graph=True。8个TP rank均确认Flash草稿25个、formal草稿37个INT8参数张量，scale均FP32，见各attempt/weight-dtype-evidence.txt。
+
+GSM8K前200题，0-shot/no_think，temperature0/top_p1，max_tokens4096，客户端16/服务4，无重试，数据SHA256 3730d312f6e3440559ace48831e51066acaca737f6eabec99bccb9e4b3c39d14。请求与非MTP基线一致（仅加return_meta_info），与旧BF16草稿MTP请求完全一致。独立boxed/Fraction判分一致；两模型均200条正常stop，无无效输出。
+
+| 模型 | 非MTP基线 | 上版BF16草稿MTP | 本版量化草稿MTP | 草稿接受率 | 加权接受长度 |
+|---|---:|---:|---:|---:|---:|
+| HY4-Flash | 191/200 | 191/200 | 194/200 | 59.03% | 3.9357 |
+| HY4 正式版 | 196/200 | 195/200 | 196/200 | 61.80% | 4.7016 |
+
+这是单轮200题结果，不能据此宣称因果改善、逐token一致或已实现性能加速；本轮同时恢复了量化草稿及社区选词mm，未做逐变量归因。未跑单独新版本eager整模型lane；新权重路径的验收是上述Graph服务、其warmup与数值回放测试，不能将旧BF16版本的eager结果移记到本版。

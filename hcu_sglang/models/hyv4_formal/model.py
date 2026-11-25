@@ -466,6 +466,25 @@ class HYV4VLForConditionalGeneration(nn.Module):
         # A DFly worker sets this here; the language model's stays None, so a
         # verify drafts once, before its media and text are embedded.
         self.dfly_execution = None
+        self.dfly = None
+        from sglang.srt.runtime_context import get_spec
+        if get_spec().speculative_algorithm == "DFLY":
+            from copy import copy
+            from hcu_sglang.models.hyv4_flash.config import parse_dfly_config, SPARSE_ATTENTION
+            from hcu_sglang.speculative_dfly.model import HYV4FlashDFly
+            draft_config = copy(config.text_config)
+            for key, value in vars(config).items():
+                if key.startswith("dfly_"):
+                    setattr(draft_config, key, value)
+            draft_config._dfly_formal = True
+            draft_config.layer_types = [SPARSE_ATTENTION] * draft_config.num_hidden_layers
+            self.dfly = HYV4FlashDFly(
+                draft_config,
+                parse_dfly_config(draft_config, get_spec().speculative_num_draft_tokens),
+                quant_config=quant_config,
+            )
+            self.dfly.bind_target(self.language_model.model.embed_tokens, self.language_model.lm_head)
+
 
     @property
     def start_layer(self):
@@ -531,6 +550,8 @@ class HYV4VLForConditionalGeneration(nn.Module):
         forward_batch: ForwardBatch,
         pp_proxy_tensors: Optional[PPProxyTensors] = None,
     ) -> torch.Tensor:
+        if self.dfly is not None and forward_batch.forward_mode.is_target_verify():
+            self.dfly.draft_into_verify(input_ids, positions, forward_batch)
         if (
             self.dfly_execution is not None
             and forward_batch.forward_mode.is_target_verify()
@@ -572,6 +593,8 @@ class HYV4VLForConditionalGeneration(nn.Module):
     def load_weights(self, weights: Iterable[Tuple[str, torch.Tensor]]):
         # One pass over the checkpoint: the text loader keeps its cross-weight
         # fusion state, and vision tensors load as they stream past it.
+        dfly_weights = []
+
         def language_weights():
             for name, loaded_weight in self.hf_to_sglang_mapper.apply(weights):
                 if any(alias in name for alias in _UNMAPPED_TEXT_NORM_NAMES):
@@ -585,12 +608,17 @@ class HYV4VLForConditionalGeneration(nn.Module):
                         self.visual.load_weights(
                             [(name.removeprefix("visual."), loaded_weight)]
                         )
+                elif name.startswith("language_model.model.dfly_layers."):
+                    if self.dfly is not None:
+                        dfly_weights.append((name.removeprefix("language_model.model.dfly_layers."), loaded_weight))
                 elif name.startswith("language_model."):
                     yield name.removeprefix("language_model."), loaded_weight
                 else:
                     raise ValueError(f"Unmapped HYV4 VL weight name: {name}")
 
         self.language_model.load_weights(language_weights())
+        if self.dfly is not None:
+            self.dfly.load_weights(dfly_weights)
 
 
 EntryClass = [HYV4VLForConditionalGeneration]

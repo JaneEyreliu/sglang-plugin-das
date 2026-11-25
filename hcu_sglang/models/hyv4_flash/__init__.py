@@ -36,7 +36,7 @@ def flash_defaults(server_args, hf_config):
     if cfg.dsa_topk_backend != "sgl-kernel":
         raise ValueError("HY4-Flash HCU requires dsa_topk_backend=sgl-kernel")
     unsupported = {
-        "speculative decoding": cfg.speculative_algorithm is not None,
+        "speculative decoding": cfg.speculative_algorithm not in (None, "DFLY"),
         "prefill CP": cfg.enable_prefill_cp,
         "DCP": cfg.dcp_size > 1,
         "DP attention": cfg.enable_dp_attention or cfg.attn_dp_size > 1,
@@ -61,6 +61,8 @@ def register_hooks():
     global _registered
     if _registered:
         return
+    from hcu_sglang.speculative_dfly import register_hooks as register_dfly
+    register_dfly()
     from transformers import AutoConfig
     from .config import HYV4FlashConfig, HYV4FlashTextConfig
     from sglang.srt.utils.hf_transformers.common import _CONFIG_REGISTRY
