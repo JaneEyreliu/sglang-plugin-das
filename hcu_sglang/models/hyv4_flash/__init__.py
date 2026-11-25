@@ -35,15 +35,18 @@ def flash_defaults(server_args, hf_config):
         raise ValueError("HY4-Flash physical indices require SGLANG_DSA_FUSE_TOPK=1")
     if cfg.dsa_topk_backend != "sgl-kernel":
         raise ValueError("HY4-Flash HCU requires dsa_topk_backend=sgl-kernel")
+    if cfg.enable_prefill_cp:
+        from .cp import validate_profile
+        validate_profile(cfg)
+        envs.SGLANG_ENABLE_CP_V2.set(True)
     unsupported = {
         "speculative decoding": cfg.speculative_algorithm not in (None, "DFLY"),
-        "prefill CP": cfg.enable_prefill_cp,
         "DCP": cfg.dcp_size > 1,
         "DP attention": cfg.enable_dp_attention or cfg.attn_dp_size > 1,
         "HiCache": cfg.enable_hierarchical_cache,
         "HiSparse": cfg.enable_hisparse,
         "PD": cfg.disaggregation_mode != "null",
-        "MoE A2A": cfg.moe_a2a_backend != "none",
+        "MoE A2A": cfg.moe_a2a_backend != "none" and not cfg.enable_prefill_cp,
         "PP": cfg.pp_size > 1,
         "waterfill": cfg.enable_waterfill,
         "two-batch overlap": cfg.enable_two_batch_overlap,

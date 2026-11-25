@@ -5285,3 +5285,21 @@ GSM8K前200题，0-shot/no_think，temperature0/top_p1，max_tokens4096，客户
 | HY4 正式版 | 196/200 | 195/200 | 196/200 | 61.80% | 4.7016 |
 
 这是单轮200题结果，不能据此宣称因果改善、逐token一致或已实现性能加速；本轮同时恢复了量化草稿及社区选词mm，未做逐变量归因。未跑单独新版本eager整模型lane；新权重路径的验收是上述Graph服务、其warmup与数值回放测试，不能将旧BF16版本的eager结果移记到本版。
+
+## HY4 正式版与 Flash prefill CP 移植（2026-11-25）
+
+来源固定为社区正式版 PR #51672 的 cfa20174cec965fcc5039dd9e39f139fbbed6485；Flash PR #51938 的 8f0cbf2b06aa2e667c68038ed6d4c592026f1b40 仍明确拒绝 CP。本轮复用社区 interleave prefill CP 和已有 HCU DSA runtime，Flash 状态衔接是新增候选实现，不能写成社区 Flash 已支持 CP。
+
+官方 SGLang v0.5.22 保持不修改，adapter 既有七个 hipify 产物保留。本轮新增行为位于 plugin，组合顺序为 adapter、官方 runtime、plugin 模型注册和窄 Hook。关闭 CP 后保留原有模型与 adapter 包装路径；CP 不兼容配置在模型 resolution 阶段明确拒绝。既有 MTP 未提交改动独立保留，本轮 CP 不允许 MTP。
+
+正式版允许文本 interleave TP8/CP8/EP8、dense TP1、DeepEP；三维位置编码按 token 轴切分，外层模型只读属性向旧版 eager CP runner 提供文本 body、head、logits processor，避免重复注册参数。dense FFN 使用 replicated 权重；DeepEP 专家保留 compressed-tensors packed 字段及加载器布局，不走 TP 专家 INT8 视图转换。
+
+Flash 仅允许文本 interleave TP8/CP8/EP8、dense TP8、DeepEP normal。IndexPool 汇总 hidden/q_lora，使用完整请求页表及全局位置更新完整状态，再切回本 rank query 行。Engram 用完整输入计算历史 hash，hash 按 token 切分，其 TP 查表/投影在完整 token 序上合并。dense FFN 汇总 token 后计算；MoE 路由专家保留 CP 局部 token 给 DeepEP，只有共享专家汇总 token 执行 TP 计算，再切回局部行相加。DeepEP 已完成 combine 的路由结果不再次 TP all-reduce。CT W4A8 核心未融合的 routed_scaling_factor 必须在外层补乘；仅当 TopK 未融合该因子时执行，防止重复缩放。该实现增加了部分 all-gather，不宣称性能优化。
+
+两者均未实现 CP+DFLY，拒绝 MTP、DP、PP、DCP、PD 和 DSA cache layer split。运行使用 native HIPC W4A8 以保留 checkpoint swiglu_limit=10；不能删除截断来绕过 Marlin EP 限制。未显式选择 Triton TP MoE 后端，KV 为 FP8 E4M3。正式版 DeepEP auto 同时使用 contiguous 和 masked HIPC，prefill eager、decode CUDA Graph 最大 batch 8、请求并发上限4；CP8 图 batch 按8对齐，最大batch4没有合法捕获桶。Flash token池65536、正式版16384；Flash 路由专家维度1536在当前 DeepEP low-latency dispatch 报 Unsupported hidden，不能使用 auto/low_latency；限定 normal + contiguous HIPC、关闭 Graph，并发上限16。
+
+CPU/tensor 测试8项覆盖配置边界、多维位置切分、wrapper 参数别名、完整请求页表、IndexPool 状态入口及异常恢复、DeepEP routed/shared 消费边界。正式版 eager 和 auto/Graph 两次9项生成检查均通过，覆盖短答案、并发4、槽位复用和大于2048 token分块输入；GSM8K前200条193正确、96.5%，独立boxed/Fraction复核一致，200条stop、无空输出或无效答案。Flash auto模式已真实加载后在原生low-latency dispatch失败，normal模式首次生成失败（重复字符/length）；5-token不触发CP的输入也失败，说明不能仅归因于CP分片。CT HIPC与TopK未应用的Flash路由缩放3.998已补齐；同时修复ragged偏移：完整Indexer错误沿用局部CP行的topk_indices_offset，可能越界读取。已按本rank选中的请求偏移扩展到完整token行，保留未选中请求不影响最终局部query的语义；使用dataclasses.replace保留冻结DSAMetadata的不可变约束；新增真实metadata到_ragged_offsets消费者回归，原始16K token池配置已通过9/9生成检查（短答案、并发4、槽位复用、长输入分块）；16K池下GSM8K未完成记录单独保留，最终Flash池扩大到65536以允许16请求，64K池配置也已通过9/9生成检查，GSM8K独立一轮200题192正确（96.0%），独立boxed/Fraction复核一致；200条stop，无空输出、无解析失败。此前 CP1 MTP 的194/200与196/200不能当成本轮CP分数。正式版比此前TP8/EP1+MTP少3题，但EP、MoE后端及MTP均变化，未建立同EP8后端的CP开关对照，不能归因于CP或声称精度无损。DFLY既有10项回归通过；W8A8 GPU opt-in用例补跑通过，覆盖9种M和Graph两次换输入回放。原生HIPC随机GEMM相对RMS误差5e-5至7e-5；含scatter/激活/gather的专家链约0.17%。真实检查点第1、2、20、41层的EP输出对照相对RMS约0.22%、cosine约0.999998；这些局部数值证据不能代替整模型验收。独立TP8/EP1 FP8 KV对照在预热发生HSA硬件异常，未完成层间对照。临时诊断抓取代码不进入运行时提交。
+
+启动脚本：examples/hyv4/launch_cp8_ep8_hcu.sh，参数为 formal 或 flash、checkpoint 路径及可选 SGLang 参数。先设置 HY4_WORKSPACE 为 adapter-das、sglang 和 sglang-plugin-das 的共同父目录；ADAPTER_DAS_ROOT、SGLANG_ROOT、PORT 可覆盖路径/端口；TORCH_EXTENSIONS_DIR 可沿用已有缓存。两种模型顺序运行，默认端口30225。
+
+两模型服务已停止，端口及8卡已释放。完整评测原始响应、独立复核、失败尝试、运行时/共享库哈希与最终源码manifest保存在本轮验证归档；本轮代码仍为feat/hy4工作区改动，未提交或推送。

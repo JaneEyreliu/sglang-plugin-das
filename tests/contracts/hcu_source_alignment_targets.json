@@ -381,6 +381,7 @@
     "sglang.srt.layers.attention.triton_backend.TritonAttnBackend.forward_extend",
     "sglang.srt.layers.attention.vision.VisionFlash3Attention.__init__",
     "sglang.srt.layers.cp.interleave.InterleaveCPStrategy",
+    "sglang.srt.layers.cp.interleave.InterleaveCPStrategy.shard_position_ids",
     "sglang.srt.layers.cp.interleave.InterleaveContextParallelMetadata",
     "sglang.srt.layers.cp.utils.cp_materialize_global_token_order",
     "sglang.srt.layers.cp.utils.cp_shard_model_inputs",

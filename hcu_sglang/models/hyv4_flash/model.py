@@ -46,7 +46,7 @@ from sglang.srt.layers.linear import ReplicatedLinear
 from sglang.srt.layers.logits_processor import LogitsProcessor
 from sglang.srt.layers.moe.ep_moe.layer import get_moe_impl_class
 from sglang.srt.layers.moe.topk import TopK, TopKOutputFormat
-from sglang.srt.layers.moe.utils import RoutingMethodType
+from sglang.srt.layers.moe.utils import RoutingMethodType, get_moe_a2a_backend
 from sglang.srt.layers.rotary_embedding import get_rope
 from sglang.srt.layers.vocab_parallel_embedding import (
     ParallelLMHead,
@@ -79,6 +79,8 @@ from sglang.srt.models.hunyuan_v4 import (
 from sglang.srt.managers.schedule_batch import Modality
 from sglang.srt.runtime_context import get_parallel
 from sglang.srt.utils import BumpAllocator
+
+from . import cp as cp_runtime
 
 logger = logging.getLogger(__name__)
 
@@ -211,6 +213,8 @@ class _RowLayout:
 def _row_layout(forward_batch: ForwardBatch, metadata, num_rows: int) -> _RowLayout:
     """The row layout is the same for every layer of a forward pass; the model
     resets `forward_batch.hy4f_layouts` at the start of each pass."""
+    if getattr(forward_batch, "hy4f_cp_full_indexer", False):
+        metadata = cp_runtime.full_indexer_metadata(forward_batch, metadata)
     cache = forward_batch.hy4f_layouts
     key = (id(metadata.attn_metadata), num_rows)
     layout = cache.get(key)
@@ -234,7 +238,12 @@ class FlashWindowIndexer(nn.Module):
         self.window = window
         self.index_topk = index_topk
 
-    def forward(
+    def forward(self, x, q_lora, positions, forward_batch, layer_id, return_indices=True):
+        if cp_runtime.active(forward_batch):
+            return cp_runtime.run_indexer(self._forward_full, x, q_lora, positions, forward_batch, layer_id, return_indices)
+        return self._forward_full(x, q_lora, positions, forward_batch, layer_id, return_indices)
+
+    def _forward_full(
         self, x, q_lora, positions, forward_batch, layer_id, return_indices=True
     ):
         num_rows = q_lora.shape[0]
@@ -244,7 +253,7 @@ class FlashWindowIndexer(nn.Module):
         layout = _row_layout(forward_batch, metadata, num_rows)
         return indexpool_kernels.window_indices(
             layout.positions.contiguous(),
-            metadata.get_page_table_64(),
+            layout.metadata.get_page_table_64(),
             layout.row_to_batch.contiguous(),
             _ragged_offsets(layout),
             self.window,
@@ -557,7 +566,12 @@ class FlashIndexPool(nn.Module):
             return positions[:, :rows].t()
         return positions[:rows]
 
-    def forward(
+    def forward(self, x, q_lora, positions, forward_batch, layer_id, return_indices=True):
+        if cp_runtime.active(forward_batch):
+            return cp_runtime.run_indexer(self._forward_full, x, q_lora, positions, forward_batch, layer_id, return_indices)
+        return self._forward_full(x, q_lora, positions, forward_batch, layer_id, return_indices)
+
+    def _forward_full(
         self, x, q_lora, positions, forward_batch, layer_id, return_indices=True
     ):
         num_rows = q_lora.shape[0]
@@ -912,7 +926,14 @@ class FlashEngram(nn.Module):
             return True
         return False
 
-    def forward(self, hidden: torch.Tensor, hashes: torch.Tensor) -> torch.Tensor:
+    def forward(self, hidden, hashes, forward_batch=None):
+        if cp_runtime.active(forward_batch):
+            hidden = cp_runtime.gather(hidden, forward_batch)
+            hashes = cp_runtime.gather(hashes, forward_batch)
+            return cp_runtime.shard(self._forward_full(hidden, hashes), forward_batch)
+        return self._forward_full(hidden, hashes)
+
+    def _forward_full(self, hidden: torch.Tensor, hashes: torch.Tensor) -> torch.Tensor:
         """hidden [T, hc_mult, dim]; hashes [T, n_hash_cols] of this layer."""
         if hidden.shape[0] == 0:
             return hidden
@@ -1100,6 +1121,12 @@ class HYV4FlashDenseMLP(DeepseekV2MLP):
         return self.post_fc2_norm
 
     def forward(self, x, forward_batch=None, apply_out_norm=True):
+        if cp_runtime.active(forward_batch):
+            full = cp_runtime.gather(x, forward_batch)
+            return cp_runtime.shard(self._forward_full(full, forward_batch, apply_out_norm), forward_batch)
+        return self._forward_full(x, forward_batch, apply_out_norm)
+
+    def _forward_full(self, x, forward_batch=None, apply_out_norm=True):
         out = super().forward(x)
         if apply_out_norm and self.post_fc2_norm is not None and out.shape[0] > 0:
             out = self.post_fc2_norm(out)
@@ -1185,6 +1212,9 @@ class HYV4FlashMoE(nn.Module):
         return self.combine_output_norm
 
     def forward(self, hidden_states, forward_batch=None, apply_out_norm=True):
+        return self._forward_full(hidden_states, forward_batch, apply_out_norm)
+
+    def _forward_full(self, hidden_states, forward_batch=None, apply_out_norm=True):
         if hidden_states.shape[0] == 0:
             return hidden_states
         router_logits = self.gate(hidden_states)
@@ -1193,12 +1223,25 @@ class HYV4FlashMoE(nn.Module):
         if self.routed_latent_down is not None:
             routed_input = self.routed_latent_down(hidden_states)[0]
         routed = self.experts(routed_input, topk_output)
+        if (
+            get_moe_a2a_backend().is_deepep()
+            and getattr(getattr(self.experts, "quant_method", None), "hcu_w4a8_hipc", False)
+            and not self.experts.should_fuse_routed_scaling_factor_in_topk
+        ):
+            routed = routed * self.routed_scaling_factor
         # The replicated up projection is linear, so project each rank's partial
         # latent sum and reduce it together with the shared expert's partial
         # output: one all-reduce instead of two.
         if self.routed_latent_up is not None:
             routed = self.routed_latent_up(routed)[0]
-        out = _maybe_all_reduce(routed + self.shared_experts(hidden_states))
+        if cp_runtime.active(forward_batch):
+            full = cp_runtime.gather(hidden_states, forward_batch)
+            shared = _maybe_all_reduce(self.shared_experts(full))
+            out = routed + cp_runtime.shard(shared, forward_batch)
+        elif get_moe_a2a_backend().is_deepep():
+            out = routed + _maybe_all_reduce(self.shared_experts(hidden_states))
+        else:
+            out = _maybe_all_reduce(routed + self.shared_experts(hidden_states))
         if apply_out_norm and self.combine_output_norm is not None:
             out = self.combine_output_norm(out)
         return out
@@ -1274,7 +1317,7 @@ class HYV4FlashDecoderLayer(nn.Module):
         if pending is None:
             residual = self.hc_attn_layer.prepare_input(hidden_states)
             if self.engram_layer is not None:
-                residual = self.engram_layer(residual, engram_hashes)
+                residual = self.engram_layer(residual, engram_hashes, forward_batch)
             residual, x, post = self._ihc_pre(
                 self.hc_attn_layer, self.input_layernorm, residual
             )
@@ -1372,7 +1415,10 @@ class HYV4FlashModel(nn.Module):
             self.rope_store.write(positions, forward_batch.out_cache_loc)
         hashes = None
         if self.engram_hasher is not None:
-            hashes = self.engram_hasher(input_ids, forward_batch, mm_pad_ids)
+            hash_ids = forward_batch.input_ids if cp_runtime.active(forward_batch) else input_ids
+            hashes = self.engram_hasher(hash_ids, forward_batch, mm_pad_ids)
+            if cp_runtime.active(forward_batch):
+                hashes = cp_runtime.shard(hashes, forward_batch)
         forward_batch.hy4f_layouts = {}
         zero_allocator = BumpAllocator(
             buffer_size=2 * len(self.layers),
@@ -1558,7 +1604,8 @@ class HYV4FlashForConditionalGeneration(nn.Module, DeepseekV2WeightLoaderMixin):
                     continue
                 from hcu_sglang.models.hunyuan_v4 import adapt_hyv4_packed_weight
 
-                name, loaded_weight = adapt_hyv4_packed_weight(name, loaded_weight, self.quant_config)
+                if not getattr(self.quant_config, "uses_hyv4_deepep", lambda: False)():
+                    name, loaded_weight = adapt_hyv4_packed_weight(name, loaded_weight, self.quant_config)
                 if name is None:
                     continue
                 name = name.replace(".compressed_indexer.", ".indexer.")

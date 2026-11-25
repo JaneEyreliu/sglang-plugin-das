@@ -487,6 +487,18 @@ class HYV4VLForConditionalGeneration(nn.Module):
 
 
     @property
+    def model(self):
+        return self.language_model.model
+
+    @property
+    def logits_processor(self):
+        return self.language_model.logits_processor
+
+    @property
+    def lm_head(self):
+        return self.language_model.lm_head
+
+    @property
     def start_layer(self):
         return self.language_model.start_layer
 

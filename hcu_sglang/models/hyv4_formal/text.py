@@ -880,6 +880,7 @@ class HYV4DecoderLayer(nn.Module):
                 config.hidden_act,
                 quant_config=quant_config,
                 prefix=f"{prefix}.mlp",
+                parallel_group="replicated" if get_parallel().enable_prefill_cp else "tp",
                 reduce_results=False,
                 allow_fused_down=False,
             )
@@ -1182,7 +1183,8 @@ class HYV4ForCausalLM(nn.Module, DeepseekV2WeightLoaderMixin):
                     continue
                 from hcu_sglang.models.hunyuan_v4 import adapt_hyv4_packed_weight
 
-                name, loaded_weight = adapt_hyv4_packed_weight(name, loaded_weight, self.quant_config)
+                if not getattr(self.quant_config, "uses_hyv4_deepep", lambda: False)():
+                    name, loaded_weight = adapt_hyv4_packed_weight(name, loaded_weight, self.quant_config)
                 if name is None:
                     continue
                 check_hyv4_scale_has_target(

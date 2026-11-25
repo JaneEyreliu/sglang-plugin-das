@@ -74,6 +74,18 @@ def _cp_family_provider(original):
         raise RuntimeError("Official HYV4 prefill CP resolution guard has changed")
     guards[0].body = [ast.copy_location(ast.Pass(), guards[0].body[0])]
     scope = dict(original.__globals__)
+    reject_flash = scope.get("_reject_unsupported_hyv4_flash")
+    if reject_flash is not None:
+        class CPFlashView:
+            moe_a2a_backend = "none"
+
+            def __init__(self, cfg):
+                self.cfg = cfg
+
+            def __getattr__(self, name):
+                return getattr(self.cfg, name)
+
+        scope["_reject_unsupported_hyv4_flash"] = lambda cfg: reject_flash(CPFlashView(cfg))
     exec(compile(ast.fix_missing_locations(tree), original.__code__.co_filename, "exec"), scope)
     return scope[original.__name__]
 
@@ -125,9 +137,15 @@ def adapt_if_requested(original, server_args, *, model_arch):
     from sglang.srt.arg_groups.model_override_base import model_config_of, resolving_view
 
     cfg = resolving_view(server_args)
-    if not (is_hcu() and model_arch == _ARCH and cfg.enable_prefill_cp):
+    if not (is_hcu() and cfg.enable_prefill_cp):
         return original
-    _validate_profile(cfg, model_config_of(server_args).hf_config)
+    if model_arch == "HYV4FlashForConditionalGeneration":
+        from hcu_sglang.models.hyv4_flash.cp import validate_profile
+        validate_profile(cfg)
+    elif model_arch == _ARCH:
+        _validate_profile(cfg, model_config_of(server_args).hf_config)
+    else:
+        return original
     resolve_model = adapt_model_resolution(original)
 
     # HYV4 shards at the strategy-based runner boundary. The legacy HCU CP
