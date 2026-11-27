@@ -45,19 +45,22 @@ def formal_defaults(server_args, hf_config):
         hyv4_dp.validate_profile(cfg, flash=False)
     
     # PD pair validated on HCU: CP8/EP8 prefill + a CP=1 decode worker.
-    # Decode runs TP-only MoE (--ep 1, no A2A backend); the TP8/EP8 DeepEP
-    # decode profile reaches the terminal IHC head as one stream (hidden)
-    # instead of hc_mult*hidden and cannot capture its decode graph.
+    # Decode runs either the attention DP8 profile or TP-only MoE (--ep 1, no
+    # A2A backend); plain TP8/EP8 DeepEP without DP reaches the terminal IHC
+    # head as one stream (hidden) and cannot capture its decode graph.
+    # DP8 decode supports the decode CUDA graph.
     pd_mode = cfg.disaggregation_mode in ("prefill", "decode")
     if pd_mode and cfg.disaggregation_transfer_backend != "mooncake":
         raise ValueError("HY4 formal HCU PD requires the mooncake transfer backend")
     if cfg.disaggregation_mode == "decode" and (
-        cfg.ep_size != 1 or cfg.moe_a2a_backend != "none"
+        not dp_enabled
+        and (cfg.ep_size != 1 or cfg.moe_a2a_backend != "none")
     ):
         raise ValueError(
-            "HY4 formal HCU PD decode requires --ep 1 and no MoE A2A backend: "
-            "the EP8/DeepEP decode profile cannot capture its IHC head, so "
-            "CP8/EP8 stays on the prefill worker"
+            "HY4 formal HCU PD decode requires either --ep 1 without a MoE A2A "
+            "backend, or the attention DP8 profile (--attn-dp-size 8 --ep 8 "
+            "--moe-a2a-backend deepep): the TP8/EP8 DeepEP profile without "
+            "attention DP cannot capture its IHC head"
         )
 
     unsupported = {

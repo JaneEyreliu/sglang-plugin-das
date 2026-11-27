@@ -20,12 +20,13 @@ def validate_profile(cfg, *, flash=False):
         and cfg.attn_cp_size == cfg.dcp_size == cfg.pp_size == 1
         and not cfg.enable_prefill_cp
         and cfg.speculative_algorithm in (None, "DFLY")
-        and cfg.disaggregation_mode == "null"
+        # PD is supported on the decode role only; prefill keeps CP8/EP8.
+        and cfg.disaggregation_mode in ("null", "decode")
         and cfg.language_model_only
         and not cfg.enable_dsa_cache_layer_split
         and cfg.deepep_mode in (("normal",) if flash else ("normal", "low_latency"))
     ):
-        raise ValueError("HY4 DP requires text-only TP8/DP8/EP8, DeepEP, dense TP1, CP1/DCP1/PP1, without PD or cache sharding; formal DP supports DeepEP normal/low_latency; Flash requires normal because native low-latency dispatch does not support its hidden size")
+        raise ValueError("HY4 DP requires text-only TP8/DP8/EP8, DeepEP, dense TP1, CP1/DCP1/PP1, without PD prefill or cache sharding; formal DP supports DeepEP normal/low_latency; Flash requires normal because native low-latency dispatch does not support its hidden size")
     if cfg.speculative_algorithm == "DFLY" and not (
         cfg.enable_dp_lm_head
         and cfg.kv_cache_dtype in ("auto", "bfloat16")
