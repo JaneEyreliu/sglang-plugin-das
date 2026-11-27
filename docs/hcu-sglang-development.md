@@ -5303,3 +5303,49 @@ CPU/tensor 测试8项覆盖配置边界、多维位置切分、wrapper 参数别
 启动脚本：examples/hyv4/launch_cp8_ep8_hcu.sh，参数为 formal 或 flash、checkpoint 路径及可选 SGLang 参数。先设置 HY4_WORKSPACE 为 adapter-das、sglang 和 sglang-plugin-das 的共同父目录；ADAPTER_DAS_ROOT、SGLANG_ROOT、PORT 可覆盖路径/端口；TORCH_EXTENSIONS_DIR 可沿用已有缓存。两种模型顺序运行，默认端口30225。
 
 两模型服务已停止，端口及8卡已释放。完整评测原始响应、独立复核、失败尝试、运行时/共享库哈希与最终源码manifest保存在本轮验证归档；本轮代码仍为feat/hy4工作区改动，未提交或推送。
+
+
+## HY4 / HY4-Flash DP8+EP8 适配（2026-11-26）
+
+来源为 JaneEyreliu/sglang-das `feat/hy4_dcp_adapt`，固定HEAD `46dd83713d95be37bd8def944a88e9ea2640af47`；目标基线plugin `bf28996`、adapter `4451637`、official `baa9befa`。保留此前未提交的部署文档，不修改官方源码或将来源fork作为运行时依赖。参考来源的token所有权与空rank合同，按0.5.22的layer_boundary实现接入；来源是Hy4-preview的EAGLE/NEXTN，不能据此认定Flash或DFLY支持。
+
+本轮范围限定文本单机TP8/attention DP8/EP8、dense TP1、DeepEP normal、CP1/DCP1/PP1，不开DFLY、PD、HiSparse或overlap。新CLI使用 `--attn-dp-size 8`，归一化后 `dp_size=1, attn_dp_size=8`，不是8个完整模型副本。启动入口为 [DP8+EP8脚本](../examples/hyv4/launch_dp8_ep8_hcu.sh)，WORKSPACE/MODEL_ROOT由调用方提供；不强制custom AR禁用、seed、离线或扩展缓存环境变量。
+
+| 路径/分支 | 来源合同 | 本轮实现与数值边界 |
+|---|---|---|
+| 正式版dense/iHC | dense独立DP；残差为本地token的[T,hc,H] | DP构造replicated dense；保留原layer_boundary；空iHC读/最终head返回连续0行张量 |
+| Flash Engram | 来源没有Flash专属模块 | 保留head分片权重，先按框架DP顺序gather int64 hash，再执行原BF16 lookup/投影及TP求和，scatter投影结果后与本地iHC合并；不gather/混合不同rank的残差 |
+| Flash专家/共享专家 | 0行rank必须参与all-to-all；shared expert不跨DP归约 | 0行使用TopK.empty_topk_output并调用专家；dense/shared权重replicated，不对local shared结果进行全局TP归约 |
+| 量化/索引/缓存 | 固定此前模型和HCU provider | 不改W4A8截断、scale或checkpoint加载逻辑；IndexPool/Engram history保持每个DP rank本地请求槽位 |
+
+当前已通过DP布局与空rank等4项单测（含BF16分片投影参考对照）、原CP相关13项回归。单测mock昂贵通信，不能代替实际8卡验证；正式版权重加载与KV分配已通过；显存比例0.80不足（日志要求大于约0.849），本配方调到0.90。max-running-requests按attention DP分摊，必须至少为8，脚本使用全局64（每rank8）；全局chunked-prefill-size使用16384（每rank2048）。修正容量后的验证遇到非本任务服务占用8卡、每卡约42GB，最新一次加载OOM；本任务无残留服务。尚未通过完整生成或GSM8K，不宣称DP8+EP8已跑通。DeepEP normal在当前版本自动禁用Graph，当前目标为eager；未覆盖Graph、DP+DFLY或DP+DCP。
+
+
+### DP8+EP8 DeepEP mode update（2026-11-26）
+
+正式版 normal/eager 已通过9/9生成检查；GSM8K-200为194/200（97.0%），200条stop，无invalid，独立复核一致。这不是low_latency成绩。Flash normal尝试在加载阶段退出，尚未完成生成或精度验证。
+
+按用户要求，DP启动脚本默认改为low_latency，配套启用SGLANG_USE_W4A8_MASKED_HIPC并清除contiguous模式；DEEPEP_MODE=normal显式恢复已验证的contiguous方案。正式版DP配置允许normal或low_latency，其他边界不变。Flash的1536维专家输入已有原生DeepEP low_latency Unsupported hidden记录，脚本和配置校验在加载前拒绝此组合；Flash暂用DEEPEP_MODE=normal。没有修改原生kernel以声称Flash支持low_latency。
+
+本次正式版low_latency实际服务验证受资源阻塞：8卡被其他容器DeepSeek-V4服务占用，每卡约77GB。配置回归和脚本检查另记日志，不能替代实际服务或数据集验证。未验证Graph、DP+DFLY和256K上下文。此次修改未提交或推送。
+
+
+### Flash DP idle attention correction（2026-11-26）
+
+Flash DP8已完成34.63GB/rank权重加载和16K FP8 KV分配，但首次预热在空rank触发社区forward_prepare的short-circuit allreduce断言。Flash构造器无条件设置o_proj.reduce_results=True；该层实际使用attn_tp组，DP8时attention TP=1，不需要归约。现按attn_tp_size>1设置，保留TP8/CP8的投影求和及sandwich norm顺序。新增回归使用实际社区forward_prepare验证DP空行短路，保留TP8归约策略；修复前反例已失败，后续实际服务和精度另记。
+
+
+### Flash Engram global DP layout correction（2026-11-26）
+
+实际8卡细粒度诊断已确认此前卡住的直接原因：DeepEP路径提供局部MLP同步布局，forward_batch.global_num_tokens_cpu为单元素[local_rows]，global_dp_buffer_len也只是本rank长度；不能把它作为Engram跨TP8分片表的全局布局。有请求rank在Engram汇总等待，空rank构造0行global buffer后继续进入DeepEP，造成collective顺序分叉。日志同时记录[6]与[0]及不同全局buffer长度，早先mock没有覆盖这个实际生产者合同。
+
+Flash每次模型forward先在TP8 CPU组汇总真实本地行数，保存在独立hy4_dp_token_counts；Engram hash用等长补齐的原生INT64 all_gather收集，再按真实计数去除补齐。所有rank对同一全局hash序列执行原有分片lookup/projection与求和，投影结果按同一计数切回局部行后再合并各自残差，不依赖MLP/Logits的局部同步布局，不跨DP混合请求残差。保留原有表/投影权重分片和rank0 bias归属。
+
+实际8卡布局检查覆盖不均匀、全非空、仅一rank非空、全空四种布局；INT64值大于2^40，汇总逐值一致；BF16全局归约及局部切片逐值一致。完整HY4回归60项，50通过、10按条件跳过，含GPU BMM/Graph用例。实际模型生成和GSM8K仍以对应最终尝试结果为准。
+
+诊断中禁用custom AR、关闭调度overlap、提前初始化DeepEP buffer、无效专家占位行都未解决根因，已从候选运行时代码撤回。临时model/deepep同步探针已撤回，未改原生依赖和官方源码；未把这些临时设置加入启动脚本。此前原生1536维INT8分发对照在有输入/空rank、量化、latent projection和async事件路径均通过，不能把整模型卡住笼统归因为DeepEP不支持空rank。本次实现保留eager边界，不声明Graph或DFLY支持。
+
+
+### Flash DP8+EP8 final acceptance（2026-11-26）
+
+最终尝试flash_eager_1795694255，DeepEP normal、默认custom AR、无固定seed/DFLY、8K eager。9/9生成检查通过（含2356-token跨块输入）；GSM8K-200为194/200，97.0%，200条stop，无invalid，独立评分一致。正式版此前normal结果为194/200（97.0%）。本轮未增加原生依赖、未修改官方源码，诊断同步/临时buffer初始化/占位行/禁用AR或overlap均未纳入最终代码。60项回归中50通过、10按条件跳过，另实际8卡四种token布局逐值验证通过。服务已由测试runner停止，端口和显存释放另做最终检查。源码与结果仍未提交/推送；256K/Graph/DP+DFLY未验证。

@@ -52,7 +52,7 @@ class FlashCPTests(unittest.TestCase):
         fn=next(n for n in cls.body if isinstance(n,ast.FunctionDef) and n.name=="_forward_full")
         fn.decorator_list=[]
         backend=SimpleNamespace(is_deepep=lambda:True)
-        scope={"cp_runtime":SimpleNamespace(active=lambda batch:False),"get_moe_a2a_backend":lambda:backend,"_maybe_all_reduce":lambda x:x*8}
+        scope={"dp_runtime":SimpleNamespace(active=lambda:False),"cp_runtime":SimpleNamespace(active=lambda batch:False),"get_moe_a2a_backend":lambda:backend,"_maybe_all_reduce":lambda x:x*8}
         exec(compile(ast.fix_missing_locations(ast.Module(body=[fn],type_ignores=[])),"moe","exec"),scope)
         obj=SimpleNamespace(gate=lambda x:0,topk=lambda x,y:None,experts=lambda x,y:3.0,
                             routed_latent_down=None,routed_latent_up=None,shared_experts=lambda x:2.0,combine_output_norm=None)

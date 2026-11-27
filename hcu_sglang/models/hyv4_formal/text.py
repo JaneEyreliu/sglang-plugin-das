@@ -52,6 +52,7 @@ from sglang.srt.models.deepseek_v2 import (
     DeepseekV2MLP,
     DeepseekV2MoE,
 )
+from hcu_sglang.models import hyv4_dp as dp_runtime
 from sglang.srt.runtime_context import get_parallel, get_stream
 from sglang.srt.utils import BumpAllocator, get_device_capability, is_cuda
 
@@ -296,6 +297,8 @@ class HYV4HCLayer(nn.Module):
         )
 
     def pre(self, hidden_states: torch.Tensor, norm: RMSNorm | None = None):
+        if hidden_states.shape[0] == 0:
+            return hidden_states[:, 0].contiguous(), hidden_states.new_zeros((0, self.hc_mult), dtype=torch.float32), hidden_states
         fuse_norm = (
             norm is not None
             and hidden_states.is_cuda
@@ -389,6 +392,8 @@ class HYV4HCHeadLayer(nn.Module):
         self._fused_ihc_head_disabled = False
 
     def forward(self, hidden_states: torch.Tensor, norm: RMSNorm | None = None):
+        if hidden_states.shape[0] == 0:
+            return hidden_states[:, 0].contiguous()
         if (
             hidden_states.is_cuda
             and not self._fused_ihc_head_disabled
@@ -880,7 +885,7 @@ class HYV4DecoderLayer(nn.Module):
                 config.hidden_act,
                 quant_config=quant_config,
                 prefix=f"{prefix}.mlp",
-                parallel_group="replicated" if get_parallel().enable_prefill_cp else "tp",
+                parallel_group="replicated" if get_parallel().enable_prefill_cp or dp_runtime.active() else "tp",
                 reduce_results=False,
                 allow_fused_down=False,
             )

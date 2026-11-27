@@ -81,6 +81,7 @@ from sglang.srt.runtime_context import get_parallel
 from sglang.srt.utils import BumpAllocator
 
 from . import cp as cp_runtime
+from hcu_sglang.models import hyv4_dp as dp_runtime
 
 logger = logging.getLogger(__name__)
 
@@ -927,6 +928,11 @@ class FlashEngram(nn.Module):
         return False
 
     def forward(self, hidden, hashes, forward_batch=None):
+        if dp_runtime.active():
+            full_hashes = dp_runtime.gather(hashes, forward_batch)
+            full_kv = self._project(full_hashes, hidden.dtype, hidden.is_cuda)
+            kv = dp_runtime.shard(full_kv, hidden.shape[0], forward_batch)
+            return self._combine(kv, hidden, hashes)
         if cp_runtime.active(forward_batch):
             hidden = cp_runtime.gather(hidden, forward_batch)
             hashes = cp_runtime.gather(hashes, forward_batch)
@@ -937,8 +943,11 @@ class FlashEngram(nn.Module):
         """hidden [T, hc_mult, dim]; hashes [T, n_hash_cols] of this layer."""
         if hidden.shape[0] == 0:
             return hidden
+        return self._combine(self._project(hashes, hidden.dtype, hidden.is_cuda), hidden, hashes)
+
+    def _project(self, hashes, dtype, use_native):
         table = self.multi_head_embedding
-        if table.weight.numel() and hidden.is_cuda:
+        if table.weight.numel() and use_native:
             x = hy4_flash_engram_lookup(
                 hashes,
                 table.head_start,
@@ -949,17 +958,19 @@ class FlashEngram(nn.Module):
                 self.lookup_gamma,
             )
         else:
-            x = self._lookup_eager(hashes, hidden.dtype)
+            x = self._lookup_eager(hashes, dtype)
         # The 4 key projections and the value projection share their input: one
         # GEMM and one all-reduce for all of them.
         if self._fused_kv is None:
             self._fused_kv = (
-                torch.cat(
-                    [p.weight for p in self.key_projs] + [self.value_proj.weight]
-                ),
+                torch.cat([p.weight for p in self.key_projs] + [self.value_proj.weight]),
                 torch.cat([p.bias for p in self.key_projs] + [self.value_proj.bias]),
             )
-        kv = _maybe_all_reduce(F.linear(x, *self._fused_kv))
+        return _maybe_all_reduce(F.linear(x, *self._fused_kv))
+
+    def _combine(self, kv, hidden, hashes):
+        if hidden.shape[0] == 0:
+            return hidden
         if hidden.is_cuda:
             return hy4_flash_engram_combine(
                 kv,
@@ -1057,7 +1068,7 @@ class HYV4FlashAttention(HYV4Attention):
                 ),
             )
         # The sandwich norm needs the full sum before the post-projection norm.
-        self.o_proj.reduce_results = True
+        self.o_proj.reduce_results = get_parallel().attn_tp_size > 1
         if external_indexer is not None:
             self.indexer = external_indexer
         elif self.is_window_layer:
@@ -1109,6 +1120,7 @@ class HYV4FlashDenseMLP(DeepseekV2MLP):
             quant_config=quant_config,
             prefix=prefix,
             reduce_results=True,
+            parallel_group="replicated" if dp_runtime.active() else "tp",
         )
         self.post_fc2_norm = (
             RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
@@ -1200,6 +1212,7 @@ class HYV4FlashMoE(nn.Module):
             quant_config=quant_config,
             reduce_results=False,
             prefix=f"{prefix}.shared_experts",
+            parallel_group="replicated" if dp_runtime.active() else "tp",
         )
         self.combine_output_norm = (
             RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
@@ -1216,9 +1229,12 @@ class HYV4FlashMoE(nn.Module):
 
     def _forward_full(self, hidden_states, forward_batch=None, apply_out_norm=True):
         if hidden_states.shape[0] == 0:
-            return hidden_states
-        router_logits = self.gate(hidden_states)
-        topk_output = self.topk(hidden_states, router_logits)
+            if not dp_runtime.active():
+                return hidden_states
+            topk_output = self.topk.empty_topk_output(hidden_states.device, layer_id=self.layer_id)
+        else:
+            router_logits = self.gate(hidden_states)
+            topk_output = self.topk(hidden_states, router_logits)
         routed_input = hidden_states
         if self.routed_latent_down is not None:
             routed_input = self.routed_latent_down(hidden_states)[0]
@@ -1239,7 +1255,8 @@ class HYV4FlashMoE(nn.Module):
             shared = _maybe_all_reduce(self.shared_experts(full))
             out = routed + cp_runtime.shard(shared, forward_batch)
         elif get_moe_a2a_backend().is_deepep():
-            out = routed + _maybe_all_reduce(self.shared_experts(hidden_states))
+            shared = self.shared_experts(hidden_states)
+            out = routed + (shared if dp_runtime.active() else _maybe_all_reduce(shared))
         else:
             out = _maybe_all_reduce(routed + self.shared_experts(hidden_states))
         if apply_out_norm and self.combine_output_norm is not None:
@@ -1408,6 +1425,8 @@ class HYV4FlashModel(nn.Module):
     def forward(
         self, input_ids, positions, forward_batch, input_embeds=None, mm_pad_ids=None
     ):
+        if dp_runtime.active():
+            dp_runtime.prepare(forward_batch, input_ids.shape[0])
         hidden_states = (
             self.embed_tokens(input_ids) if input_embeds is None else input_embeds
         )
