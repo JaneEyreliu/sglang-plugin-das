@@ -112,13 +112,23 @@ class Hyv4DPTests(unittest.TestCase):
             mod.validate_profile(SimpleNamespace(**cfg), flash=flash)
             for key, value in [("dp_size", 4), ("attn_cp_size", 8), ("ep_size", 4),
                                ("moe_dense_tp_size", 8), ("moe_a2a_backend", "none"),
-                               ("speculative_algorithm", "DFLY"), ("max_running_requests", 4)]:
+                               ("speculative_algorithm", "EAGLE"), ("max_running_requests", 4)]:
                 with self.subTest(flash=flash, key=key), self.assertRaises(ValueError):
                     mod.validate_profile(SimpleNamespace(**dict(cfg, **{key: value})), flash=flash)
         mod.validate_profile(SimpleNamespace(**dict(cfg, deepep_mode="low_latency")), flash=False)
         for mode in ("auto", "low_latency"):
             with self.subTest(mode=mode), self.assertRaises(ValueError):
                 mod.validate_profile(SimpleNamespace(**dict(cfg, deepep_mode=mode)), flash=True)
+        dfly = dict(cfg, speculative_algorithm="DFLY", enable_dp_lm_head=True,
+                    kv_cache_dtype="auto", dtype="bfloat16", disable_cuda_graph=True,
+                    disable_prefill_cuda_graph=True)
+        for flash in (False, True):
+            mod.validate_profile(SimpleNamespace(**dfly), flash=flash)
+            for key, value in [("enable_dp_lm_head", False), ("kv_cache_dtype", "fp8_e4m3"),
+                               ("dtype", "float16"), ("disable_cuda_graph", False),
+                               ("disable_prefill_cuda_graph", False)]:
+                with self.subTest(flash=flash, key=key), self.assertRaises(ValueError):
+                    mod.validate_profile(SimpleNamespace(**dict(dfly, **{key: value})), flash=flash)
 
     def test_engram_projects_aligned_global_hashes_before_local_combine(self):
         import torch

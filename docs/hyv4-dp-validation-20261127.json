@@ -1,0 +1,177 @@
+{
+  "schema_version": 1,
+  "scope": "text-only HCU TP8 / attention DP8 / EP8; CP1/DCP1/PP1; eager",
+  "base": {
+    "adapter-das": "4451637dd2be5b0688baa2ff26d608eb5d7b1543",
+    "sglang": "baa9befa381511cd4d56f83980951e5a45fffc6d",
+    "sglang-plugin-das": "bf289966dc71ab87c8fba30448e1b2c466b7ef6c"
+  },
+  "dp_commit": "521406f1b41bfc1ae5f005ab5127a89bd87ef9b8",
+  "dataset": {
+    "name": "GSM8K test",
+    "sha256": "3730d312f6e3440559ace48831e51066acaca737f6eabec99bccb9e4b3c39d14",
+    "limit": 200,
+    "concurrency": 16,
+    "max_tokens": 4096,
+    "temperature": 0,
+    "prompt": "0-shot/no_think",
+    "retries": 0
+  },
+  "formal_dfly": {
+    "attempt": "formal_dfly_1795751084",
+    "hardware": "S4 / BW1101 / gfx938",
+    "summary": {
+      "model": "formal",
+      "total": 200,
+      "correct": 192,
+      "invalid": 0,
+      "finish_reasons": {
+        "stop": 200
+      },
+      "wrong_indices": [
+        12,
+        87,
+        93,
+        100,
+        119,
+        163,
+        184,
+        187
+      ],
+      "independent_correct": 192,
+      "verdict_disagreement": []
+    },
+    "generation_checks": {
+      "passed": 9,
+      "total": 9
+    },
+    "configuration": {
+      "tp_size": 8,
+      "attn_dp_size": 8,
+      "ep_size": 8,
+      "speculative_algorithm": "DFLY",
+      "speculative_num_draft_tokens": 7,
+      "deepep_mode": "low_latency",
+      "kv_cache_dtype": "bfloat16",
+      "dtype": "bfloat16",
+      "context_length": 8192,
+      "chunked_prefill_size": 128,
+      "max_running_requests": 64,
+      "disable_cuda_graph": true,
+      "disable_prefill_cuda_graph": true
+    },
+    "rank_cumulative_avg_accept_lengths": [
+      4.7508038585209,
+      4.581733951025811,
+      4.567441860465117,
+      4.441997063142438,
+      4.716019417475728,
+      4.552169898430286,
+      4.812,
+      4.800170068027211
+    ],
+    "accept_length_scope": "Includes warmup and smoke; not a dataset-only weighted mean",
+    "evidence_sha256": {
+      "summary.json": "25a10142ef26fd949200fe810bbf4ddd4df6a8d5d9f4acae13a1893c5f96d7ea",
+      "raw-results.jsonl": "c4e49370188a4882bbc05491458d7b26f1d246a4246d2a0012a087d1e8449973",
+      "generation-smoke.json": "70ce24ee3c90b837487edc5a5f4d75892bac7eb3575dce91cb79fd3e6585270d",
+      "independent-boxed-audit.json": "135e63e1de61bd58f2c55862ec133aa3deb3f6434e46ba234e12fef49fed54aa",
+      "post-server-info.json": "ac0ad4790ba198f1edd969157ab5a8bb676fc68fb169a47e56590228aac4309c",
+      "effective-command.json": "d11bb60fc17b8e11879e29a0072e36c26b9aa20e415c1e9a8852ffed26c2db1c"
+    },
+    "native_build": {
+      "native_available": true,
+      "ops": {
+        "merge_state_v2": true,
+        "concat_mla_k": true,
+        "concat_mla_absorb_q": true,
+        "copy_to_gpu_no_ce": true,
+        "sgl_per_token_group_quant_8bit": true,
+        "sgl_per_token_group_quant_8bit_v2": true,
+        "silu_and_mul": true
+      },
+      "library": "adapter-das/sgl_kernel/native_ops.cpython-312-x86_64-linux-gnu.so",
+      "sha256": "8c0e65cfe0d4bea54e8d550cd2e67362620826081f8c50e028e21f5823882865",
+      "arch": "gfx938:sramecc+:xnack-",
+      "device": "BW1101"
+    },
+    "cleanup": {
+      "attempt": "formal_dfly_1795751084",
+      "port_18026_closed": true,
+      "owned": []
+    }
+  },
+  "no_dfly_baseline": {
+    "formal": {
+      "attempt": "formal_eager_1795677125",
+      "correct": 194,
+      "total": 200
+    },
+    "flash": {
+      "attempt": "flash_eager_1795694255",
+      "correct": 194,
+      "total": 200
+    },
+    "configuration": "nmz26; DeepEP normal; FP8 E4M3 KV; 8K eager",
+    "comparison_limit": "DFLY result changes KV, DeepEP mode and node as well; no single-variable attribution"
+  },
+  "flash_dfly": {
+    "status": "pending full default execution validation",
+    "diagnostic_attempt": "flash_dfly_1795744554",
+    "diagnostic_environment": {
+      "AMD_SERIALIZE_KERNEL": "3"
+    },
+    "generation_checks": {
+      "passed": 9,
+      "total": 9
+    },
+    "partial_dataset": {
+      "completed": 62,
+      "correct": 60,
+      "invalid": 0,
+      "final_accuracy": null
+    },
+    "limitations": [
+      "Default execution hit an unresolved hipErrorNoBinaryForGpu once; later default retests were blocked by other services occupying GPU memory",
+      "No Flash weights found in checked S4 model mounts; no new Flash dataset score"
+    ]
+  },
+  "runtime_sha256": {
+    "hcu_sglang/models/hyv4_formal/utils.py": "97ff6c5c002830a837034b0a8ca4d30c886bc376628cda35248f0dcef743984e",
+    "hcu_sglang/models/hyv4_formal/text.py": "b7b7d599ac26c69c9e54677573c175e4f936c7c06be725af16f7c22ba6e2b5f1",
+    "hcu_sglang/models/hyv4_formal/model.py": "9408ef57750d95d111a79bff114b261cf5e5cdb7e32699b19c8675c52f10d886",
+    "hcu_sglang/models/hyv4_formal/config.py": "a52f6e20910c2a6f73263e34b424a06386a7458f176d59f76ccc6065456a3ec6",
+    "hcu_sglang/models/hyv4_formal/cp.py": "49f377927923f8049b9cee9f71446fb4f5256777aa11055d6b525d47e1299b9f",
+    "hcu_sglang/models/hyv4_formal/__init__.py": "a1157e7c87522b5c59690dd3f38f8f3e2cf68d9a77c7f711a603795b56b888d2",
+    "hcu_sglang/models/hyv4_flash/processing.py": "b0d96e16afc9bd7fdd3298e1550a6e29a388dab8c5bbbcbe4e445a4868112d42",
+    "hcu_sglang/models/hyv4_flash/model.py": "4068f5e538aa057a8a008b81ff97c8f78e35ad94cf8cc534b3bc6452b6ecfccd",
+    "hcu_sglang/models/hyv4_flash/config.py": "703755ccf8ca9d5bd88bed67f620fc1d3b2e3d7b220844aea8a8a96575814fe3",
+    "hcu_sglang/models/hyv4_flash/cp.py": "0c1995fcb4726ef0010b1cf7fa26d52a943646f2591f4e963dca95562da1984f",
+    "hcu_sglang/models/hyv4_flash/vision_config.py": "2f39e573027f15c0f12175331eace93d1e4215d0f70bc0835c2625f886701048",
+    "hcu_sglang/models/hyv4_flash/vision.py": "6f1ffed4ad13f399c5cb937b7e8edd72bb8ca4031eafc792364408bf0410cecd",
+    "hcu_sglang/models/hyv4_flash/__init__.py": "2034177ec8be65981943c870ffeb1354e6865c074f109e9a82ee5fc8bf28c64d",
+    "hcu_sglang/speculative_dfly/utils.py": "94e68ad3f5a87995a6ab4910d0319525fe247b7953f1424582b8e5787ba22ba7",
+    "hcu_sglang/speculative_dfly/model.py": "323e6b4c99ec9c28b9038e3b543cc4b5ce8c44bf737efb62805bc34b2240d0b7",
+    "hcu_sglang/speculative_dfly/worker.py": "207b6340b0986650523de7a13da00691d5497b1863c8c51c3e29da84f2169e33",
+    "hcu_sglang/speculative_dfly/__init__.py": "116b3be7275277b7946b2c3252b6eac43a4b733e4de88d5e1560aca78955939e",
+    "hcu_sglang/models/hyv4_dp.py": "30d35e507b3e95cc962d8d3630bcc258b0b0d1b8e3eefb6b2bfff9a324f56434"
+  },
+  "regressions": {
+    "before_fix": "Three counterexamples fail before the DFLY DP changes: idle verify, draft FFN partition, cross-DP greedy gather",
+    "targeted_after": {
+      "passed": 5,
+      "total": 5,
+      "includes": "Real HCU greedy mm"
+    },
+    "hyv4_suite": {
+      "passed": 54,
+      "skipped": 11,
+      "total": 65
+    },
+    "native_activation_suite": {
+      "passed": 48,
+      "total": 48
+    }
+  },
+  "evidence_archive_sha256": "b53beea168990617088747a9551b4352549d8b62ab393e0ff50a28349d66d244"
+}

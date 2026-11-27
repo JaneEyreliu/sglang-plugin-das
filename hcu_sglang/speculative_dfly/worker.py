@@ -13,7 +13,7 @@ from sglang.srt.managers.tp_worker import TpModelWorker
 from sglang.srt.managers.utils import GenerationBatchResult
 from sglang.srt.model_executor.forward_batch_info import ForwardBatch
 from sglang.srt.model_executor.forward_batch_info import CaptureHiddenMode
-from sglang.srt.runtime_context import get_exec, get_schedule, get_spec
+from sglang.srt.runtime_context import get_exec, get_parallel, get_schedule, get_spec
 from sglang.srt.server_args import ServerArgs
 from sglang.srt.speculative.base_spec_worker import BaseSpecWorker
 from sglang.srt.speculative.dflash_info import DFlashVerifyInput
@@ -140,7 +140,7 @@ class DFlyWorkerV2(BaseSpecWorker):
         if batch.forward_mode.is_extend() or batch.is_extend_in_batch:
             return self._forward_prefill(batch, on_publish)
         if batch.forward_mode.is_idle():
-            return self._forward_idle(on_publish)
+            return self._forward_idle(batch, on_publish)
         return self._forward_decode(batch, on_publish)
 
     def _forward_prefill(self, batch: ScheduleBatch, on_publish):
@@ -168,7 +168,23 @@ class DFlyWorkerV2(BaseSpecWorker):
         )
         return result
 
-    def _forward_idle(self, on_publish):
+    def _forward_idle(self, batch, on_publish):
+        if get_parallel().attn_dp_enabled:
+            verify_input = DFlashVerifyInput(
+                draft_token=torch.empty((0,), dtype=torch.int64, device=self.device),
+                positions=torch.empty((0,), dtype=torch.int64, device=self.device),
+                draft_token_num=self.block_size,
+                custom_mask=None,
+                capture_hidden_mode=CaptureHiddenMode.FULL,
+            )
+            forward_batch, _ = verify_input.prepare_for_verify(batch, self._target_worker)
+            forward_batch.can_run_decode_cuda_graph = False
+            self._target_worker.forward_batch_generation(
+                batch=None,
+                forward_batch=forward_batch,
+                is_verify=True,
+                skip_attn_backend_init=True,
+            )
         next_draft_input = make_draft_input_v2(
             bonus_tokens=torch.empty((0,), dtype=torch.int64, device=self.device),
             new_seq_lens=torch.empty((0,), dtype=torch.int64, device=self.device),

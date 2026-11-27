@@ -49,7 +49,7 @@ class DFlyFormalAttention(HYV4Attention):
     def __init__(self, config, layer_id, quant_config, prefix, alt_stream=None, external_indexer=None):
         super().__init__(config, layer_id, quant_config, prefix, alt_stream)
         self.indexer = external_indexer
-        self.o_proj.reduce_results = True
+        self.o_proj.reduce_results = get_parallel().attn_tp_size > 1
 
     def should_run_indexer(self, prev_topk_indices=None):
         return True
@@ -94,7 +94,9 @@ class HYV4FlashDFlyLayer(nn.Module):
             if self.mlp.gate_up_proj.output_sizes[0] != width:
                 raise ValueError("Inconsistent DFly FFN widths in the checkpoint")
             return
-        if width % get_tensor_model_parallel_world_size():
+        parallel = get_parallel()
+        tp_size = parallel.attn_tp_size if parallel.attn_dp_enabled else get_tensor_model_parallel_world_size()
+        if width % tp_size:
             raise ValueError("DFly FFN width must be divisible by TP")
         previous = torch.get_default_dtype()
         torch.set_default_dtype(dtype)
@@ -107,6 +109,7 @@ class HYV4FlashDFlyLayer(nn.Module):
                     quant_config=self.quant_config,
                     reduce_results=True,
                     prefix=f"{self.prefix}.mlp",
+                    parallel_group="attn_tp" if parallel.attn_dp_enabled else "tp",
                 )
         finally:
             torch.set_default_dtype(previous)
@@ -165,6 +168,7 @@ class HYV4FlashDFlyHiddenCorrection(nn.Module):
             bias=False,
             quant_config=quant_config,
             prefix=f"{prefix}.gate_up_proj",
+            parallel_group="attn_tp" if get_parallel().attn_dp_enabled else "tp",
         )
         self.act = SiluAndMul()
         self.down_proj = RowParallelLinear(
@@ -174,6 +178,7 @@ class HYV4FlashDFlyHiddenCorrection(nn.Module):
             quant_config=quant_config,
             reduce_results=True,
             prefix=f"{prefix}.down_proj",
+            parallel_group="attn_tp" if get_parallel().attn_dp_enabled else "tp",
         )
 
     def forward(self, hidden, previous_embed):
@@ -314,8 +319,8 @@ class HYV4FlashDFly(nn.Module):
         logits = torch.mm(hidden, weight.T, out_dtype=torch.float32)
         local_max, local_arg = logits.max(dim=-1)
         local_ids = local_arg + shard.org_vocab_start_index
-        tp_group = get_parallel().tp_group
-        if tp_group.world_size == 1:
+        tp_group = getattr(head, "tp_group", get_parallel().tp_group)
+        if tp_group is None or tp_group.world_size == 1:
             return local_ids
         rows = hidden.shape[0]
         maxes = local_max.new_empty((tp_group.world_size * rows,))

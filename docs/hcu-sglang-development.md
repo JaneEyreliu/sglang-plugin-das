@@ -5349,3 +5349,34 @@ Flash每次模型forward先在TP8 CPU组汇总真实本地行数，保存在独�
 ### Flash DP8+EP8 final acceptance（2026-11-26）
 
 最终尝试flash_eager_1795694255，DeepEP normal、默认custom AR、无固定seed/DFLY、8K eager。9/9生成检查通过（含2356-token跨块输入）；GSM8K-200为194/200，97.0%，200条stop，无invalid，独立评分一致。正式版此前normal结果为194/200（97.0%）。本轮未增加原生依赖、未修改官方源码，诊断同步/临时buffer初始化/占位行/禁用AR或overlap均未纳入最终代码。60项回归中50通过、10按条件跳过，另实际8卡四种token布局逐值验证通过。服务已由测试runner停止，端口和显存释放另做最终检查。源码与结果仍未提交/推送；256K/Graph/DP+DFLY未验证。
+
+## HY4 DP8+EP8+DFLY 验证与范围（2026-11-27）
+
+用途：在前一节DP8+EP8基线上接入DFLY，并区分正式版已验证配方和Flash待验收范围。固定official `baa9befa`、adapter `4451637`；结构化配置、源码SHA、逐题结果哈希和清理记录见[本轮验证清单](hyv4-dp-validation-20261127.json)。
+
+空rank的idle decode构建空target verify，参与目标Engram/DeepEP collective，但跳过本地草稿和状态提交。草稿FFN及hidden correction使用attention TP组；greedy使用lm_head实际通信组，避免收集其他DP请求。接受同步继续使用get_dp_tp_group。混合prefill轮中的局部decode也刷新目标top-k种子。checkpoint的草稿INT8权重/scale处理不变。
+
+| 模型/配方 | 本轮结果 | 当前边界 |
+|---|---|---|
+| HY4正式版，DP8+EP8+DFLY block7，DeepEP low_latency | S4的9/9生成检查；GSM8K200为192/200（96.0%），200条stop、0无效，独立评分一致 | BF16主KV、8K、eager；服务已停止 |
+| HY4-Flash，DP8+EP8+DFLY block6，DeepEP normal | 同步诊断环境9/9生成检查；部分62题不作为最终精度分数 | 默认异步曾出现未定因的kernel-image错误；后续复测受资源冲突阻断，完整精度待验证 |
+
+正式版各rank的服务累计平均接受长度为4.44～4.81，包含生成检查，不能当作数据集独立加权均值或加速比。此前无DFLY的两模型DP8+EP8成绩均为97.0%；正式版本轮低1个百分点，但同时改变KV格式、DeepEP模式和节点，不能单独归因DFLY或宣称符合预期。
+
+启动入口为`examples/hyv4/launch_dp8_ep8_dfly_hcu.sh`，显式传入`WORKSPACE`和`MODEL_ROOT`。正式版默认low_latency、全局chunk1024（DP后每rank128），匹配默认低延迟分发容量；Flash默认normal、全局chunk16384。两者主KV为BF16，关闭Graph，DP lm_head开启，无固定seed或custom AR禁用参数。Flash原生low_latency的hidden-size限制保留。
+
+```bash
+export WORKSPACE=/path/to/workspace
+export MODEL_ROOT=/path/to/model-mount
+bash "$WORKSPACE/sglang-plugin-das/examples/hyv4/launch_dp8_ep8_dfly_hcu.sh" formal
+```
+
+当前草稿复用目标KV并使用BF16 sparse attention接口，因此DP+DFLY配置要求BF16主KV；没有移植FP8草稿KV消费路径。此限制不等于草稿权重必须BF16，也不表示DFLY算法禁止FP8。Graph、256K、PD、PP/CP/DCP>1不在本次已验证范围。
+
+修复前3个反例分别复现idle跳过目标verify、草稿FFN使用全TP分片、greedy跨DP组收集。修复后专项5/5通过（含HCU greedy实算）；HY4回归65项中54通过、11按GPU opt-in条件跳过。S4按下列命令就地构建adapter原生库，注册检查和48项activation回归通过；构建产物及hipify文件不作为源码提交。
+
+```bash
+AMDGPU_TARGETS=gfx938 MAX_JOBS=8 python3 setup_hip.py build_ext --inplace
+```
+
+S4运行目录采用三仓源码、scripts与log并列布局。评测脚本的数据和请求模型路径已匹配该节点；完整200题响应和失败尝试保留在任务证据目录。GPU资源争用导致的OOM与未定因的Flash kernel-image错误分别记录，不混作模型精度结论。

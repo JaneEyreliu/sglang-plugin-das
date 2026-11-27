@@ -119,6 +119,8 @@ class DFlyLogicalTopkCapture:
         elif mode.is_extend():
             last = forward_batch.extend_seq_lens.to(torch.int64).cumsum(0) - 1
             selected = indices[last]
+        elif mode.is_decode():
+            selected = indices
         else:
             return
         valid = selected >= 0

@@ -29,8 +29,14 @@ class DFlyAlgorithm(CustomSpecAlgo):
         cfg = resolving_view(server_args)
         if cfg.pp_size != 1 or cfg.attn_cp_size != 1 or cfg.dcp_size != 1:
             raise ValueError("DFLY requires PP=CP=DCP=1")
+        hf = None
         if cfg.enable_dp_attention or cfg.attn_dp_size != 1:
-            raise ValueError("DFLY does not support DP attention")
+            from hcu_sglang.models.hyv4_dp import validate_profile
+            hf = get_config(cfg.model_path, trust_remote_code=cfg.trust_remote_code, revision=cfg.revision)
+            architectures = getattr(hf, "architectures", None) or []
+            if not any(arch in architectures for arch in ("HYV4VLForConditionalGeneration", "HYV4FlashForConditionalGeneration")):
+                raise ValueError("DFLY attention DP requires HY4 or HY4-Flash")
+            validate_profile(cfg, flash="HYV4FlashForConditionalGeneration" in architectures)
         if cfg.disaggregation_mode != "null" or cfg.enable_lora:
             raise ValueError("DFLY does not support PD or LoRA")
         if cfg.speculative_draft_model_path not in (None, cfg.model_path):
@@ -42,7 +48,8 @@ class DFlyAlgorithm(CustomSpecAlgo):
                 raise ValueError(f"DFLY requires {name}=1")
         width = cfg.speculative_num_draft_tokens
         if width is None:
-            hf = get_config(cfg.model_path, trust_remote_code=cfg.trust_remote_code, revision=cfg.revision)
+            if hf is None:
+                hf = get_config(cfg.model_path, trust_remote_code=cfg.trust_remote_code, revision=cfg.revision)
             width = getattr(hf, "dfly_block_size", 6)
         if not 2 <= int(width) <= 17:
             raise ValueError("DFLY block width must be between 2 and 17")

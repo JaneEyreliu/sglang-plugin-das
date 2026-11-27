@@ -502,6 +502,9 @@ class FlashIndexPool(nn.Module):
             last = torch.cumsum(lens, 0) - 1
             seeds = get_attn_backend().prepare_mtp_seed_indices(indices[last], mode)
             capture[: last.shape[0]].copy_(seeds)
+        elif mode.is_decode():
+            seeds = get_attn_backend().prepare_mtp_seed_indices(indices, mode)
+            capture[: indices.shape[0]].copy_(seeds)
 
     def _select(self, layout: "_RowLayout", q_fp8, weights, decode: bool):
         """Top groups strictly before each query's group, expanded to tokens, plus
