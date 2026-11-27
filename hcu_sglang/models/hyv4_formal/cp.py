@@ -11,10 +11,13 @@ def validate_profile(cfg):
         and cfg.moe_a2a_backend == "deepep"
         and cfg.attn_dp_size == cfg.dp_size == cfg.pp_size == cfg.dcp_size == 1
         and cfg.speculative_algorithm is None
-        and cfg.disaggregation_mode == "null"
+        # A PD prefill keeps this same CP profile: every CP rank materializes
+        # the full KV before writing the pool, so CP rank 0 alone transfers the
+        # CP-replicated KV to the decode ranks. PD decode never enables CP.
+        and cfg.disaggregation_mode in ("null", "prefill")
         and not cfg.enable_dsa_cache_layer_split
     ):
-        raise ValueError("HY4 formal prefill CP requires interleave TP8/CP8/EP8, DeepEP, dense TP1, without MTP, DP, PP, DCP, PD or cache sharding")
+        raise ValueError("HY4 formal prefill CP requires interleave TP8/CP8/EP8, DeepEP, dense TP1, without MTP, DP, PP, DCP or cache sharding; PD is supported as prefill only")
 
 
 def shard_position_ids(original, self, positions, forward_batch):

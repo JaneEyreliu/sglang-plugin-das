@@ -43,12 +43,29 @@ def formal_defaults(server_args, hf_config):
     dp_enabled = hyv4_dp.requested(cfg)
     if dp_enabled:
         hyv4_dp.validate_profile(cfg, flash=False)
+    
+    # PD pair validated on HCU: CP8/EP8 prefill + a CP=1 decode worker.
+    # Decode runs TP-only MoE (--ep 1, no A2A backend); the TP8/EP8 DeepEP
+    # decode profile reaches the terminal IHC head as one stream (hidden)
+    # instead of hc_mult*hidden and cannot capture its decode graph.
+    pd_mode = cfg.disaggregation_mode in ("prefill", "decode")
+    if pd_mode and cfg.disaggregation_transfer_backend != "mooncake":
+        raise ValueError("HY4 formal HCU PD requires the mooncake transfer backend")
+    if cfg.disaggregation_mode == "decode" and (
+        cfg.ep_size != 1 or cfg.moe_a2a_backend != "none"
+    ):
+        raise ValueError(
+            "HY4 formal HCU PD decode requires --ep 1 and no MoE A2A backend: "
+            "the EP8/DeepEP decode profile cannot capture its IHC head, so "
+            "CP8/EP8 stays on the prefill worker"
+        )
+
     unsupported = {
         "speculative decoding": cfg.speculative_algorithm not in (None, "DFLY"),
         "DCP": cfg.dcp_size > 1,
         "HiCache": cfg.enable_hierarchical_cache,
         "HiSparse": cfg.enable_hisparse,
-        "PD": cfg.disaggregation_mode != "null",
+        "PD": cfg.disaggregation_mode not in ("null", "prefill", "decode"),
         "MoE A2A": cfg.moe_a2a_backend != "none" and not (cfg.enable_prefill_cp or dp_enabled),
         "PP": cfg.pp_size > 1,
         "waterfill": cfg.enable_waterfill,
@@ -62,6 +79,46 @@ def formal_defaults(server_args, hf_config):
         raise ValueError("HY4 formal HCU requires page_size=64")
     return {"page_size": 64}
 
+def around_language_model_only(original, server_args):
+    """Run the upstream text-only checks with PD neutralized for formal HY4.
+
+    The formal checkpoint is a VL checkpoint served text-only, so it needs
+    --language-model-only. Upstream admits that flag together with PD only for
+    the ``deepseek_v41`` text-only profile; the formal HY4 PD path has the same
+    contract (text-only standard KV transfer), so keep the remaining upstream
+    checks and let the real disaggregation mode stand.
+    """
+    from copy import copy
+
+    from sglang.srt.arg_groups.model_override_base import (
+        model_config_of,
+        resolving_view,
+    )
+
+    cfg = resolving_view(server_args)
+    if not (
+        cfg.language_model_only
+        and cfg.disaggregation_mode in ("prefill", "decode")
+        and is_formal(model_config_of(server_args).hf_config)
+    ):
+        return original(server_args)
+
+    proxy = copy(server_args)
+    proxy.disaggregation_mode = "null"
+    overrides = getattr(proxy, "_resolved_overrides", None)
+    if overrides:
+        proxy._resolved_overrides = [
+            (
+                source,
+                {
+                    key: value
+                    for key, value in declared.items()
+                    if key != "disaggregation_mode"
+                },
+            )
+            for source, declared in overrides
+        ]
+    return original(proxy)
 
 def register_hooks():
     global _registered
@@ -84,5 +141,6 @@ def register_hooks():
         _CONFIG_REGISTRY[config.model_type] = config
     HookRegistry.register("sglang.srt.configs.model_config.is_deepseek_dsa", around_is_dsa, HookType.AROUND)
     HookRegistry.register("sglang.srt.configs.model_config.ModelConfig._derive_model_shapes", around_shapes, HookType.AROUND)
+    HookRegistry.register("sglang.srt.arg_groups.model_hook.handle_language_model_only", around_language_model_only, HookType.AROUND)
     register_model_override_predicate(lambda arch: arch == "HYV4VLForConditionalGeneration")(formal_defaults)
     _registered = True
